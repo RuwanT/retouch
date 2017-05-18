@@ -3,6 +3,8 @@ import utils.slice_op
 import os
 import numpy as np
 import pandas as pd
+from PIL import Image
+
 
 DATA_ROOT = '/home/truwan/DATA/retouch/'
 IRF_CODE = 1
@@ -35,8 +37,11 @@ for subdir, dirs, files in os.walk(DATA_ROOT):
                 im_slice = img[slice_num, :, :].astype(np.float32)  # TODO: check float type in nuts-flow
                 im_slice = utils.slice_op.pre_process_slice(im_slice)  # TODO: pre_process_slice
                 save_name = DATA_ROOT + 'oct_slices/' + vendor + '_' + image_name + '_' + str(slice_num).zfill(
-                    3) + '.npy'
-                np.save(save_name, im_slice)
+                    3) + '.tiff'
+
+                im_slice = Image.fromarray(im_slice, mode='F')
+                im_slice.save(save_name)
+                # np.save(save_name, im_slice)
 
 col_names = ['image_name', 'vendor', 'root', 'slice', 'is_IRF', 'is_SRF', 'is_PED']
 df = pd.DataFrame(image_names, columns=col_names)

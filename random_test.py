@@ -16,6 +16,7 @@ PED_CODE = 3
 
 DATA_ROOT = '/home/truwan/DATA/retouch/Cirrus/'
 # DATA_ROOT = '/home/truwan/DATA/retouch/'
+DATA_ROOT = '/Users/ruwant/DATA/retouch/'
 
 from collections import defaultdict
 count =0

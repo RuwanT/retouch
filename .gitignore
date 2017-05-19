@@ -7,7 +7,7 @@ __pycache__/
 *.so
 *.npy
 *.csv
-
+*.xml
 # Distribution / packaging
 .Python
 env/

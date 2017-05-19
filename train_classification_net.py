@@ -16,7 +16,7 @@ def train_network():
     
     :return: 
     """
-
+    ImagePatchesByMask()
 
 
 

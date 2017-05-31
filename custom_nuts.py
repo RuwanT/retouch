@@ -57,16 +57,26 @@ def sample_retouch_patches(img, mask=None, pshape=(224,224), npos=10, nneg=1, po
     :return: 
     """
     y_min, y_max = calculate_oct_y_range(img)
-    roi_mask = np.ones(mask.shape, dtype=np.int8)*neg
+    roi_mask = np.zeros(mask.shape, dtype=np.int8)
+    # print y_min, y_max
     roi_mask[y_min:y_max,:] = pos
+    roi_mask[y_min:y_min+32, :] = 0
+    roi_mask[y_max-32:y_max, :] = 0
+    # plt.imshow(img)
+    # print np.max(roi_mask), np.min(roi_mask)
 
-    for r, c, label in ni.sample_patch_centers(roi_mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg):
+    it = ni.sample_patch_centers(roi_mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg)
+    for r, c, label in it:
         img_patch = ni.extract_patch(img, pshape, r, c)
         mask_patch = ni.extract_patch(mask, pshape, r, c)
         label_IRF = int(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == IRF_CODE))
         label_SRF = int(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
         label_PED = int(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
         yield img_patch, mask_patch, label_IRF, label_SRF, label_PED
+        # plt.plot(c, r, 'ro')
+
+    # plt.pause(.1)
+    # plt.clf()
 
 
 

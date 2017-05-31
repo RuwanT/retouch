@@ -80,34 +80,57 @@ else:
 #                 plt.clf()
 
 
-from utils.slice_op import hist_match
-filepath_s = '/home/truwan/DATA/retouch/Spectralis/fe02f982b78218ab05c755c01c7876b1/oct.mhd'
-filepath_c = '/home/truwan/DATA/retouch/Cirrus/1e0e71d2acdc57f10ab6712ab87b2ef7/oct.mhd'
+# # doing histogram matching
+# from utils.slice_op import hist_match
+# filepath_s = '/home/truwan/DATA/retouch/Spectralis/fe02f982b78218ab05c755c01c7876b1/oct.mhd'
+# filepath_c = '/home/truwan/DATA/retouch/Cirrus/1e0e71d2acdc57f10ab6712ab87b2ef7/oct.mhd'
+#
+# img_s, _, _ = mhd.load_oct_image(filepath_s)
+# img_c, _, _ = mhd.load_oct_image(filepath_c)
+#
+# img_c_t = hist_match(img_c, img_s)
+# num_slices = img_c_t.shape[0]
+#
+# # p_s, x = np.histogram(img_s, bins=255, range=(0, 255), density=True)
+# # p_c, x = np.histogram(img_c, bins=255, range=(0, 255), density=True)
+# # p_t, x = np.histogram(img_c_t, bins=255, range=(0, 255), density=True)
+#
+# # plt.plot(x[:-1],p_s, color='blue')
+# # plt.plot(x[:-1],p_c, color='red')
+# # plt.plot(x[:-1],p_t, color='green')
+# # plt.show()
+#
+#
+#
+# for slice_num in range(0, num_slices,1):
+#     plt.subplot(1,2,1)
+#     plt.imshow(img_c[slice_num, :, :])
+#     plt.subplot(1,2,2)
+#     plt.imshow(img_c_t[slice_num, :, :])
+#     plt.pause(0.1)
 
-img_s, _, _ = mhd.load_oct_image(filepath_s)
-img_c, _, _ = mhd.load_oct_image(filepath_c)
 
-img_c_t = hist_match(img_c, img_s)
-num_slices = img_c_t.shape[0]
+# # test image write
+# DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/oct_imgs/'
+#
+# for subdir, dirs, files in os.walk(DATA_ROOT):
+#     for file in files:
+#         filepath = subdir + os.sep + file
+#
+#         if filepath.endswith(".tiff"):
+#             img = Image.open(filepath)
+#             img = img.resize((512,512), Image.LANCZOS)
+#             img = np.asarray(img)
+#             print img.shape
+#             plt.imshow(img)
+#             plt.pause(1)
 
-p_s, x = np.histogram(img_s, bins=255, range=(0, 255), normed=True)
-p_c, x = np.histogram(img_c, bins=255, range=(0, 255), normed=True)
-p_t, x = np.histogram(img_c_t, bins=255, range=(0, 255), normed=True)
-
-# plt.plot(x[:-1],p_s, color='blue')
-# plt.plot(x[:-1],p_c, color='red')
-# plt.plot(x[:-1],p_t, color='green')
-# plt.show()
-
-
-
-for slice_num in range(0, num_slices,1):
-    plt.subplot(1,2,1)
-    plt.imshow(img_c[slice_num, :, :])
-    plt.subplot(1,2,2)
-    plt.imshow(img_c_t[slice_num, :, :])
-    plt.pause(0.1)
-
-
-
-
+from custom_nuts import sample_retouch_patches, calculate_oct_y_range
+DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/oct_imgs/'
+for subdir, dirs, files in os.walk(DATA_ROOT):
+    for file in files:
+        filepath = subdir + os.sep + file
+        if filepath.endswith(".tiff"):
+            img = Image.open(filepath)
+            img = np.asarray(img)
+            calculate_oct_y_range(img, tresh=1e-10)

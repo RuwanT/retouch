@@ -8,6 +8,8 @@ __pycache__/
 *.npy
 *.csv
 *.xml
+*.tiff
+*.mhd
 # Distribution / packaging
 .Python
 env/

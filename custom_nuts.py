@@ -43,7 +43,7 @@ def calculate_oct_y_range(img, tresh=1e-10):
         return 0, img.shape[0]
 
 
-def sample_retouch_patches(img, mask=None, pshape=(224,224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
+def sample_retouch_patches(img, mask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
     """
     Generate patches from the interesting region of the OCT slice
     :param img: oct image slice
@@ -59,9 +59,9 @@ def sample_retouch_patches(img, mask=None, pshape=(224,224), npos=10, nneg=1, po
     y_min, y_max = calculate_oct_y_range(img)
     roi_mask = np.zeros(mask.shape, dtype=np.int8)
     # print y_min, y_max
-    roi_mask[y_min:y_max,:] = pos
-    roi_mask[y_min:y_min+32, :] = 0
-    roi_mask[y_max-32:y_max, :] = 0
+    roi_mask[y_min:y_max, :] = pos
+    roi_mask[y_min:y_min + 32, :] = 0
+    roi_mask[y_max - 32:y_max, :] = 0
     # plt.imshow(img)
     # print np.max(roi_mask), np.min(roi_mask)
 
@@ -69,20 +69,19 @@ def sample_retouch_patches(img, mask=None, pshape=(224,224), npos=10, nneg=1, po
     for r, c, label in it:
         img_patch = ni.extract_patch(img, pshape, r, c)
         mask_patch = ni.extract_patch(mask, pshape, r, c)
-        label_IRF = int(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == IRF_CODE))
-        label_SRF = int(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
-        label_PED = int(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
+        label_IRF = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == IRF_CODE))
+        label_SRF = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
+        label_PED = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
         yield img_patch, mask_patch, label_IRF, label_SRF, label_PED
         # plt.plot(c, r, 'ro')
 
-    # plt.pause(.1)
-    # plt.clf()
-
+        # plt.pause(.1)
+        # plt.clf()
 
 
 @nut_processor
 def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, pshape, npos,
-                       nneg, pos=255, neg=0, patch_border=12):
+                              nneg, pos=255, neg=0, patch_border=12):
     """
     :param iterable: iterable: Samples with images
     :param imagecol: Index of sample column that contain image
@@ -102,15 +101,38 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
 
     for sample in iterable:
         image, mask = sample[imagecol], sample[maskcol]
+        img_height = image.shape[0]
+
         if image.shape[:2] != mask.shape:
             raise ValueError('Image and mask size don''t match!')
 
-        it = sample_retouch_patches(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg, patch_border=patch_border)
+        # TODO : Further test downscaling strategy
+        if img_height > 512:
+            # print 'Cirrus image'
+            it = sample_retouch_patches(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
+                                        neg=neg,
+                                        patch_border=patch_border)
+        else:
+            # print 'Spectralisis image'
+            it = sample_retouch_patches(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg,
+                                        patch_border=patch_border)
 
         for img_patch, mask_patch, label_IRF, label_SRF, label_PED in it:
             outsample = list(sample)[:]
-            outsample[imagecol] = img_patch
-            outsample[maskcol] = mask_patch
+            if img_height > 512:
+                # TODO : check if averaging is better than ignoring image rows
+                # outsample[imagecol] = (
+                # 0.5 * img_patch[0::2, :].astype(np.float32) + 0.5 * img_patch[1::2, :].astype(np.float32)).astype(
+                #     np.int32)
+                outsample[imagecol] = img_patch[0::2, :]
+                temp = np.zeros((2,pshape[0], pshape[1]), dtype=np.int8)
+                temp[0, :] = mask_patch[0::2, :]
+                temp[1, :] = mask_patch[1::2, :]
+                outsample[maskcol] = np.max(temp, axis=0)
+            else:
+                outsample[imagecol] = img_patch
+                outsample[maskcol] = mask_patch
+
             outsample[IRFcol] = label_IRF
             outsample[SRFcol] = label_SRF
             outsample[PEDcol] = label_PED

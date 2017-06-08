@@ -1,21 +1,23 @@
-from custom_networks import retouch_dual_net
-from custom_nuts import ImagePatchesByMaskRetouch
+from custom_networks import retouch_dual_net, retouch_vgg_net
+from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT
 from nutsflow import *
 from nutsml import *
 import platform
 import numpy as np
 from custom_networks import retouch_dual_net
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 if platform.system() == 'Linux':
     DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/'
 else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 
 
 def train_model():
-    SplitRandom
 
     # reading training data
     train_file = DATA_ROOT + 'slice_gt.csv'
@@ -57,14 +59,14 @@ def train_model():
     # setting up image ad mask readers
     imagepath = DATA_ROOT + 'oct_imgs/*'
     maskpath = DATA_ROOT + 'oct_masks/*'
-    img_reader = ReadImage(0, imagepath)
+    img_reader = ReadOCT(0, imagepath)
     mask_reader = ReadImage(1, maskpath)
 
     # randomly sample image patches from the interesting region (based on entropy)
     image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(224, 224),
                                               npos=20, nneg=2, pos=1)
 
-    viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
+    # viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
 
     # building image batches
     build_batch_train = (BuildBatch(BATCH_SIZE, prefetch=0)
@@ -93,24 +95,32 @@ def train_model():
             return False
 
     # define the model
-    model = retouch_dual_net(input_shape=(224, 224, 1))
+    model = retouch_vgg_net(input_shape=(224, 224, 3))
 
     def train_batch(sample):
-        model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
+        outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
+        return outp
 
-    train_data >> NOP(Filter(is_cirrus)) >> Map(
-        rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
-        1000) >> image_patcher >> FilterFalse(drop_patch) >> viewer >> NOP(build_batch_train) >> NOP(
-        PrintColType()) >> NOP(Map(train_batch)) >> Consume()
+    def test_batch(sample):
+        outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
+        return outp
 
-    # # testing one-hot for segmentation
-    # build_batch_train = (BuildBatch(1, prefetch=0)
-    #                      .by(1, 'one_hot', 'uint8', 4))
-    # def reformat(sample):
-    #     img = sample[0][0,:,:,0]*255
-    #     return (img, )
-    # viewer = ViewImage(imgcols=(0), pause=.1)
-    # data >> Map(rearange_cols) >> img_reader >> mask_reader >> build_batch_train >> Map(reformat) >> viewer >> PrintColType() >> Consume()
+    log_cols_train = LogCols('./outputs/train_log.csv', cols=None, colnames=model.metrics_names)
+    log_cols_test = LogCols('./outputs/test_log.csv', cols=None, colnames=model.metrics_names)
+
+    for e in range(0, 10):
+        train_data >> NOP(Filter(is_cirrus)) >> Map(
+            rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
+            100) >> image_patcher >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
+            viewer) >> build_batch_train >> NOP(PrintColType()) >> Map(train_batch) >> log_cols_train >> Consume()
+
+        print "Testing Epoch", str(e)
+        val_data >> NOP(Filter(is_cirrus)) >> Map(
+            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> build_batch_train >> Map(
+            train_batch) >> log_cols_test >> Consume()
+
+        # save weights
+        model.save_weights('./outputs/weights.h5')
 
 
 if __name__ == "__main__":

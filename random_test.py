@@ -1,26 +1,26 @@
-import os
-from utils import mhd, msse
-import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-import scipy.misc, scipy.signal
-import skimage.filters
-import skimage
-import skimage.transform
-from skimage.morphology import disk, rectangle
-from skimage.filters.rank import entropy
-from skimage.filters.rank import median
-import platform
-
-
-IRF_CODE = 1
-SRF_CODE = 2
-PED_CODE = 3
-
-if platform.system() == 'Linux':
-    DATA_ROOT = '/home/truwan/DATA/retouch/'
-else:
-    DATA_ROOT = '/Users/ruwant/DATA/retouch/'
+# import os
+# from utils import mhd, msse
+# import numpy as np
+# from PIL import Image
+# import matplotlib.pyplot as plt
+# import scipy.misc, scipy.signal
+# import skimage.filters
+# import skimage
+# import skimage.transform
+# from skimage.morphology import disk, rectangle
+# from skimage.filters.rank import entropy
+# from skimage.filters.rank import median
+# import platform
+#
+#
+# IRF_CODE = 1
+# SRF_CODE = 2
+# PED_CODE = 3
+#
+# if platform.system() == 'Linux':
+#     DATA_ROOT = '/home/truwan/DATA/retouch/'
+# else:
+#     DATA_ROOT = '/Users/ruwant/DATA/retouch/'
 
 
 # # Plot average histograms for vendor
@@ -125,12 +125,16 @@ else:
 #             plt.imshow(img)
 #             plt.pause(1)
 
-from custom_nuts import sample_retouch_patches, calculate_oct_y_range
-DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/oct_imgs/'
-for subdir, dirs, files in os.walk(DATA_ROOT):
-    for file in files:
-        filepath = subdir + os.sep + file
-        if filepath.endswith(".tiff"):
-            img = Image.open(filepath)
-            img = np.asarray(img)
-            calculate_oct_y_range(img, tresh=1e-10)
+# from custom_nuts import sample_retouch_patches, calculate_oct_y_range
+# DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/oct_imgs/'
+# for subdir, dirs, files in os.walk(DATA_ROOT):
+#     for file in files:
+#         filepath = subdir + os.sep + file
+#         if filepath.endswith(".tiff"):
+#             img = Image.open(filepath)
+#             img = np.asarray(img)
+#             calculate_oct_y_range(img, tresh=1e-10)
+
+
+from custom_networks import retouch_vgg_net
+retouch_vgg_net()

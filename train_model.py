@@ -15,10 +15,10 @@ else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
 BATCH_SIZE = 16
+EPOCH = 10
 
 
 def train_model():
-
     # reading training data
     train_file = DATA_ROOT + 'slice_gt.csv'
     data = ReadPandas(train_file, dropnan=True)
@@ -108,16 +108,30 @@ def train_model():
     log_cols_train = LogCols('./outputs/train_log.csv', cols=None, colnames=model.metrics_names)
     log_cols_test = LogCols('./outputs/test_log.csv', cols=None, colnames=model.metrics_names)
 
-    for e in range(0, 10):
+    filter_batch_shape = lambda s: s[0].shape[-1] == BATCH_SIZE
+
+    def remove_patch_mean(sample):
+        s = sample[0]
+
+    calc_mean = lambda s: np.mean(s[0])
+
+    meandata = train_data >> Pick(5) >> Map(rearange_cols) >> img_reader >> mask_reader >> image_patcher >> Map(calc_mean) >> Collect()
+
+    patch_mean = np.mean(meandata)
+    print patch_mean
+    remove_mean = lambda s: s - patch_mean
+
+    for e in range(0, EPOCH):
         train_data >> NOP(Filter(is_cirrus)) >> Map(
             rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
-            100) >> image_patcher >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
-            viewer) >> build_batch_train >> NOP(PrintColType()) >> Map(train_batch) >> log_cols_train >> Consume()
+            100) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
+            viewer) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
+            train_batch) >> log_cols_train >> Consume()
 
         print "Testing Epoch", str(e)
         val_data >> NOP(Filter(is_cirrus)) >> Map(
-            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> build_batch_train >> Map(
-            train_batch) >> log_cols_test >> Consume()
+            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0, remove_mean) >> build_batch_train >> Filter(
+            filter_batch_shape) >> Map(test_batch) >> log_cols_test >> Consume()
 
         # save weights
         model.save_weights('./outputs/weights.h5')

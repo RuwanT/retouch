@@ -9,6 +9,7 @@ import platform
 import matplotlib.pyplot as plt
 from skimage.morphology import disk, rectangle
 from skimage.filters.rank import median
+import matplotlib.pyplot as plt
 
 if platform.system() == 'Linux':
     DATA_ROOT = '/home/truwan/DATA/retouch/'
@@ -38,7 +39,8 @@ for subdir, dirs, files in os.walk(DATA_ROOT):
                 image_names.append([image_name, vendor, subdir, slice_num, int(np.any(im_slice == IRF_CODE)),
                                     int(np.any(im_slice == SRF_CODE)), int(np.any(im_slice == PED_CODE))])
                 im_slice = Image.fromarray(im_slice, mode='L')
-                save_name = DATA_ROOT + 'pre_processed/oct_masks/' + vendor + '_' + image_name + '_' + str(slice_num).zfill(
+                save_name = DATA_ROOT + 'pre_processed/oct_masks/' + vendor + '_' + image_name + '_' + str(
+                    slice_num).zfill(
                     3) + '.tiff'
                 im_slice.save(save_name)
 
@@ -48,19 +50,27 @@ for subdir, dirs, files in os.walk(DATA_ROOT):
             img, _, _ = mhd.load_oct_image(filepath)
             if 'Cirrus' in vendor:
                 img = hist_match(img, oct_r)
+            elif 'Topcon' in vendor:
+                img = hist_match(img, oct_r)
             num_slices = img.shape[0]
             for slice_num in range(0, num_slices):
-                if 'Cirrus' in vendor and (slice_num > 0) and (slice_num < num_slices-1):
-                    im_slice = np.median(img[slice_num-1:slice_num+2, :, :].astype(np.int32), axis=0).astype(np.int32)
+                if 'Cirrus' in vendor and (slice_num > 0) and (slice_num < num_slices - 1):
+                    im_slice = np.median(img[slice_num - 1:slice_num + 2, :, :].astype(np.int32), axis=0).astype(
+                        np.int32)
+                if 'Topcon' in vendor and (slice_num > 0) and (slice_num < num_slices - 1):
+                    im_slice = np.median(img[slice_num - 1:slice_num + 2, :, :].astype(np.int32), axis=0).astype(
+                        np.int32)
                 else:
                     im_slice = img[slice_num, :, :].astype(np.int32)
                 im_slice = Image.fromarray(im_slice, mode='I')
                 # TODO : check if this second filtering is useful
                 if 'Cirrus' in vendor:
                     im_slice = im_slice.filter(ImageFilter.MedianFilter(size=3))
-                save_name = DATA_ROOT + 'pre_processed/oct_imgs/' + vendor + '_' + image_name + '_' + str(slice_num).zfill(3) + '.tiff'
+                elif 'Topcon' in vendor:
+                    im_slice = im_slice.filter(ImageFilter.MedianFilter(size=3))
+                save_name = DATA_ROOT + 'pre_processed/oct_imgs/' + vendor + '_' + image_name + '_' + str(
+                    slice_num).zfill(3) + '.tiff'
                 im_slice.save(save_name)
-
 
 col_names = ['image_name', 'vendor', 'root', 'slice', 'is_IRF', 'is_SRF', 'is_PED']
 df = pd.DataFrame(image_names, columns=col_names)

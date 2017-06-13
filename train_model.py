@@ -1,4 +1,4 @@
-from custom_networks import retouch_dual_net, retouch_vgg_net
+from custom_networks import retouch_dual_net, retouch_vgg_net, retouch_unet
 from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT
 from nutsflow import *
 from nutsml import *
@@ -18,15 +18,57 @@ BATCH_SIZE = 16
 EPOCH = 10
 
 
-def train_model():
-    # reading training data
+def visualize_images():
     train_file = DATA_ROOT + 'slice_gt.csv'
     data = ReadPandas(train_file, dropnan=True)
     data = data >> Shuffle(4000) >> Collect()
 
+    is_topcon = lambda v: v[1] == 'Cirrus'
+
+    def rearange_cols(sample):
+        """
+        Re-arrange the incoming data stream to desired outputs
+        :param sample: 
+        :return: 
+        """
+        img = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
+        mask = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
+        IRF_label = sample[4]
+        SRF_label = sample[5]
+        PED_label = sample[6]
+
+        return (img, mask, IRF_label, SRF_label, PED_label)
+
+    # setting up image ad mask readers
+    imagepath = DATA_ROOT + 'oct_imgs/*'
+    maskpath = DATA_ROOT + 'oct_masks/*'
+    img_reader = ReadOCT(0, imagepath)
+    mask_reader = ReadImage(1, maskpath)
+
+    viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=.1)
+    slice_oct = lambda x: x[:,:,1]
+
+    # randomly sample image patches from the interesting region (based on entropy)
+    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(224, 224),
+                                              npos=20, nneg=2, pos=1)
+
+    data >> NOP(Filter(is_topcon)) >> Map(
+        rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
+
+def train_model():
+    # reading training data
+    train_file = DATA_ROOT + 'slice_gt.csv'
+    data = ReadPandas(train_file, dropnan=True)
+    data = data >> Shuffle(7000) >> Collect()
+
     # Split the data set into train and test sets with all the slices from the same volume remaining in one split
     same_image = lambda s: s[0]
     train_data, val_data = data >> SplitRandom(ratio=0.75, constraint=same_image)
+
+    val_images = val_data >> GetCols(0, 1) >> Collect(container=set)
+    print 'printing validation set: '
+    val_images >> Print() >> Consume()
+    print '...'
 
     def rearange_cols(sample):
         """
@@ -89,39 +131,37 @@ def train_model():
         :param drop_prob: 
         :return: 
         """
-        if (sample[2] == 0) and (sample[3] == 0) and (sample[4] == 0):
+        if (int(sample[2]) == 0) and (int(sample[3]) == 0) and (int(sample[4]) == 0):
             return float(np.random.random_sample(1)) < drop_prob
         else:
             return False
 
     # define the model
-    model = retouch_vgg_net(input_shape=(224, 224, 3))
+    # model = retouch_vgg_net(input_shape=(224, 224, 3))
+    model = retouch_unet(input_shape=(224, 224, 3))
 
     def train_batch(sample):
-        outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
-        return outp
+        # outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
+        outp = model.train_on_batch(sample[0], [sample[1],])
+        return (outp,)
 
     def test_batch(sample):
-        outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
-        return outp
+        # outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
+        outp = model.test_on_batch(sample[0], [sample[1],])
+        return (outp,)
 
     log_cols_train = LogCols('./outputs/train_log.csv', cols=None, colnames=model.metrics_names)
     log_cols_test = LogCols('./outputs/test_log.csv', cols=None, colnames=model.metrics_names)
 
-    filter_batch_shape = lambda s: s[0].shape[-1] == BATCH_SIZE
+    filter_batch_shape = lambda s: s[0].shape[0] == BATCH_SIZE
 
-    def remove_patch_mean(sample):
-        s = sample[0]
-
-    calc_mean = lambda s: np.mean(s[0])
-
-    meandata = train_data >> Pick(5) >> Map(rearange_cols) >> img_reader >> mask_reader >> image_patcher >> Map(calc_mean) >> Collect()
-
-    patch_mean = np.mean(meandata)
+    patch_mean = 116.
     print patch_mean
     remove_mean = lambda s: s - patch_mean
 
+    print 'Starting network training'
     for e in range(0, EPOCH):
+        print "Training Epoch", str(e)
         train_data >> NOP(Filter(is_cirrus)) >> Map(
             rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
             100) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
@@ -139,3 +179,4 @@ def train_model():
 
 if __name__ == "__main__":
     train_model()
+    # visualize_images()

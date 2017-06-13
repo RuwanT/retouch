@@ -1,17 +1,17 @@
-# import os
-# from utils import mhd, msse
-# import numpy as np
-# from PIL import Image
-# import matplotlib.pyplot as plt
-# import scipy.misc, scipy.signal
-# import skimage.filters
-# import skimage
-# import skimage.transform
-# from skimage.morphology import disk, rectangle
-# from skimage.filters.rank import entropy
-# from skimage.filters.rank import median
-# import platform
-#
+import os
+from utils import mhd, msse
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import scipy.misc, scipy.signal
+import skimage.filters
+import skimage
+import skimage.transform
+from skimage.morphology import disk, rectangle
+from skimage.filters.rank import entropy
+from skimage.filters.rank import median
+import platform
+
 #
 # IRF_CODE = 1
 # SRF_CODE = 2
@@ -136,5 +136,10 @@
 #             calculate_oct_y_range(img, tresh=1e-10)
 
 
-from custom_networks import retouch_vgg_net
-retouch_vgg_net()
+DATA_ROOT = '/home/truwan/DATA/retouch/Topcon/'
+for subdir, dirs, files in os.walk(DATA_ROOT):
+    for file in files:
+        filepath = subdir + os.sep + file
+        if filepath.endswith(".mhd"):
+            img, _, s = mhd.load_oct_image(filepath)
+            print img.shape, s

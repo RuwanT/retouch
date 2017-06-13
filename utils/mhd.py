@@ -25,6 +25,9 @@ def load_oct_image(filename):
     elif 'Spectralis' in filename:
         # range 0-2**16
         ct_scan_ret = (ct_scan.astype(np.float32) / (2 ** 16) * 255.).astype(np.int32)
+    elif 'Topcon' in filename:
+        # range 0-255
+        ct_scan_ret = ct_scan.astype(np.int32)
 
     # Read the origin of the ct_scan, will be used to convert the coordinates from world to voxel and vice versa.
     origin = np.array(list(reversed(itkimage.GetOrigin())))

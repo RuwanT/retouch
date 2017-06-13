@@ -19,3 +19,5 @@ class Softmax4D(Layer):
         # axis_index = self.axis % len(input_shape)
         return tuple([input_shape[i] for i in range(len(input_shape)) ])#\
                       #if i != axis_index ])
+
+

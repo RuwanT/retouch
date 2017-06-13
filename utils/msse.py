@@ -15,4 +15,5 @@ def fit_polynormial(x, y, niter=10, deg=2, kth=0.5):
         r2s_inx = sorted(range(len(r2)), key=lambda k: r2[k])
         x_inx = r2s_inx[Kth-p:Kth]
 
-    return poly_coef
+    y_ = np.polyval(poly_coef, x)
+    return poly_coef, y_

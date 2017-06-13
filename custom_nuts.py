@@ -11,6 +11,7 @@ import skimage
 from skimage.color import rgb2gray
 import skimage.io as sio
 import os.path
+import scipy
 
 IRF_CODE = 1
 SRF_CODE = 2
@@ -36,12 +37,24 @@ def calculate_oct_y_range(img, tresh=1e-10):
     p_ = np.asarray(p_ > tresh, dtype=np.int)
     inx = np.where(p_ == 1)
 
+    # im_slice_ = im_slice_ / (np.max(im_slice_) + 1e-16)
+    # im_slice_ = np.asarray(im_slice_ > tresh, dtype=np.int)
+    # y = list()
+    # for i in range(0, im_slice_.shape[1]):
+    #     if np.any(im_slice_[:,i]==1):
+    #         yy = np.where(im_slice_[:,i]==1)[0][0]
+    #     else:
+    #         yy = 0
+    #     y.append(yy)
+    #
+    # y = scipy.signal.medfilt(y, kernel_size=81)
     # p_ = np.zeros(p_.shape, dtype=np.float32)
     # if len(inx[0]) > 0:
     #     p_[inx[0][0]:inx[0][-1]] = 512.
     # plt.imshow(img)
     # print img.shape
     # plt.plot(p_, range(0, len(p_)), color='red')
+    # plt.plot(range(0, len(y)), y, color='blue')
     # plt.pause(1)
     # plt.clf()
 
@@ -68,6 +81,7 @@ def sample_retouch_patches(img, mask=None, pshape=(224, 224), npos=10, nneg=1, p
     roi_mask = np.zeros(mask.shape, dtype=np.int8)
     # print y_min, y_max
     roi_mask[y_min:y_max, :] = pos
+    # TODO : Why 32?
     roi_mask[y_min:y_min + 32, :] = 0
     roi_mask[y_max - 32:y_max, :] = 0
     # plt.imshow(img)
@@ -115,7 +129,7 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
             raise ValueError('Image and mask size don''t match!')
 
         # TODO : Further test downscaling strategy
-        if img_height > 512:
+        if img_height > 700:
             # print 'Cirrus image'
             it = sample_retouch_patches(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
                                         neg=neg,
@@ -127,13 +141,13 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
 
         for img_patch, mask_patch, label_IRF, label_SRF, label_PED in it:
             outsample = list(sample)[:]
-            if img_height > 512:
+            if img_height > 700:
                 # TODO : check if averaging is better than ignoring image rows
                 # outsample[imagecol] = (
                 # 0.5 * img_patch[0::2, :].astype(np.float32) + 0.5 * img_patch[1::2, :].astype(np.float32)).astype(
                 #     np.int32)
                 outsample[imagecol] = img_patch[0::2, :]
-                temp = np.zeros((2,pshape[0], pshape[1]), dtype=np.int8)
+                temp = np.zeros((2, pshape[0], pshape[1]), dtype=np.int8)
                 temp[0, :] = mask_patch[0::2, :]
                 temp[1, :] = mask_patch[1::2, :]
                 outsample[maskcol] = np.max(temp, axis=0)
@@ -177,15 +191,15 @@ def load_oct_image(filepath, as_grey=False, dtype='uint8', no_alpha=True):
         if slice_num == 0:
             arr0 = arr1
         else:
-            s0_filepath = filepath[:-8] + str(slice_num-1).zfill(3) + '.tiff'
+            s0_filepath = filepath[:-8] + str(slice_num - 1).zfill(3) + '.tiff'
             arr0 = np.expand_dims(sio.imread(s0_filepath, as_grey=as_grey, img_num=0).astype(dtype), axis=-1)
-        s2_filepath = filepath[:-8] + str(slice_num+1).zfill(3) + '.tiff'
+        s2_filepath = filepath[:-8] + str(slice_num + 1).zfill(3) + '.tiff'
         if os.path.isfile(s2_filepath):
             arr2 = np.expand_dims(sio.imread(s2_filepath, as_grey=as_grey, img_num=0).astype(dtype), axis=-1)
         else:
             arr2 = arr1
 
-        arr = np.concatenate([arr0,arr1,arr2], axis=-1)
+        arr = np.concatenate([arr0, arr1, arr2], axis=-1)
 
     if arr.ndim == 3 and arr.shape[2] == 4 and no_alpha:
         arr = arr[..., :3]  # cut off alpha channel

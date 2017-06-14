@@ -44,10 +44,11 @@ def visualize_images():
     mask_reader = ReadImage(1, maskpath)
 
     viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=.1)
-    slice_oct = lambda x: x[:,:,1]
+    slice_oct = lambda x: x[:, :, 1]
 
     # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(PATCH_SIZE, PATCH_SIZE),
+    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
+                                              pshape=(PATCH_SIZE, PATCH_SIZE),
                                               npos=20, nneg=2, pos=1)
 
     data >> NOP(Filter(is_topcon)) >> Map(
@@ -55,7 +56,6 @@ def visualize_images():
 
 
 def train_model():
-
     if not os.path.isfile('./outputs/train_data_.csv'):
         print 'generating new test train SPLIT'
         # reading training data
@@ -126,7 +126,7 @@ def train_model():
                                               pshape=(PATCH_SIZE, PATCH_SIZE),
                                               npos=5, nneg=2, pos=1, use_entropy=False)
 
-    # viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
+    # img_viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=.1)
 
     # building image batches
     build_batch_train = (BuildBatch(BATCH_SIZE, prefetch=0)
@@ -182,13 +182,14 @@ def train_model():
         print "Training Epoch", str(e)
         train_data >> NOP(Filter(is_cirrus)) >> Map(
             rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
-            100) >> NOP(PrintColType()) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> NOP(FilterFalse(drop_patch)) >> NOP(
-            viewer) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
+            100) >> NOP(PrintColType()) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> NOP(
+            FilterFalse(drop_patch)) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
             train_batch) >> log_cols_train >> Consume()
 
         print "Testing Epoch", str(e)
         val_data >> NOP(Filter(is_cirrus)) >> Map(
-            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0, remove_mean) >> build_batch_train >> Filter(
+            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0,
+                                                                                   remove_mean) >> build_batch_train >> Filter(
             filter_batch_shape) >> Map(test_batch) >> log_cols_test >> Consume()
 
         # save weights

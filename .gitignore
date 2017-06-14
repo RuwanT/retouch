@@ -11,6 +11,7 @@ __pycache__/
 *.tiff
 *.mhd
 *.png
+*.h5
 *.idea*
 # Distribution / packaging
 .Python

@@ -31,6 +31,7 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
     # TODO: Check behavior when all classes are not present
     # shape = KB.int_shape(y_pred)
     CROP_SHAPE = KB.int_shape(y_pred)
+    print CROP_SHAPE
     batch_size = BATCH_SIZE
     num_classes = 4
 
@@ -47,7 +48,7 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
     y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
     y_true_ = KB.reshape(y_true_, shape=(batch_size, num_classes)) + KB.ones(shape=(batch_size, num_classes))
 
-    cross_ent = cross_ent / y_true_
+    cross_ent = (cross_ent / y_true_) * KB.variable(CROP_SHAPE[1]*CROP_SHAPE[2], dtype='float32')
 
     return - KB.mean(cross_ent, axis=-1, keepdims=False)
 
@@ -327,7 +328,7 @@ def retouch_unet(input_shape=(224, 224, 3)):
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)
 
     model = Model(inputs=in_image, outputs=seg_out)
-    sgd = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=False)
+    sgd = SGD(lr=0.001, momentum=0.9, decay=1e-6, nesterov=False)
     model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
 
     model.summary()

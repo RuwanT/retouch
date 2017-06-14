@@ -16,6 +16,7 @@ else:
 
 BATCH_SIZE = 16
 EPOCH = 10
+PATCH_SIZE = 256
 
 
 def visualize_images():
@@ -49,21 +50,40 @@ def visualize_images():
     slice_oct = lambda x: x[:,:,1]
 
     # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(224, 224),
+    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(PATCH_SIZE, PATCH_SIZE),
                                               npos=20, nneg=2, pos=1)
 
     data >> NOP(Filter(is_topcon)) >> Map(
         rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
 
-def train_model():
-    # reading training data
-    train_file = DATA_ROOT + 'slice_gt.csv'
-    data = ReadPandas(train_file, dropnan=True)
-    data = data >> Shuffle(7000) >> Collect()
 
-    # Split the data set into train and test sets with all the slices from the same volume remaining in one split
-    same_image = lambda s: s[0]
-    train_data, val_data = data >> SplitRandom(ratio=0.75, constraint=same_image)
+def train_model():
+
+    if not os.path.isfile('./outputs/train_data_.csv'):
+        print 'generating new test train SPLIT'
+        # reading training data
+        train_file = DATA_ROOT + 'slice_gt.csv'
+        data = ReadPandas(train_file, dropnan=True)
+        data = data >> Shuffle(7000) >> Collect()
+
+        # Split the data set into train and test sets with all the slices from the same volume remaining in one split
+        same_image = lambda s: s[0]
+        train_data, val_data = data >> SplitRandom(ratio=0.75, constraint=same_image)
+
+        writer = WriteCSV('./outputs/train_data_.csv')
+        train_data >> writer
+
+        writer = WriteCSV('./outputs/test_data_.csv')
+        val_data >> writer
+    else:
+        print 'Using existing test train SPLIT'
+        train_file = './outputs/train_data_.csv'
+        data = ReadPandas(train_file, dropnan=True)
+        train_data = data >> Collect()
+
+        train_file = './outputs/test_data_.csv'
+        data = ReadPandas(train_file, dropnan=True)
+        val_data = data >> Collect()
 
     val_images = val_data >> GetCols(0, 1) >> Collect(container=set)
     print 'printing validation set: '
@@ -105,8 +125,8 @@ def train_model():
     mask_reader = ReadImage(1, maskpath)
 
     # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(224, 224),
-                                              npos=20, nneg=2, pos=1)
+    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(PATCH_SIZE, PATCH_SIZE),
+                                              npos=20, nneg=2, pos=1, use_entropy=False)
 
     # viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
 
@@ -138,7 +158,7 @@ def train_model():
 
     # define the model
     # model = retouch_vgg_net(input_shape=(224, 224, 3))
-    model = retouch_unet(input_shape=(224, 224, 3))
+    model = retouch_unet(input_shape=(PATCH_SIZE, PATCH_SIZE, 3))
 
     def train_batch(sample):
         # outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
@@ -155,16 +175,16 @@ def train_model():
 
     filter_batch_shape = lambda s: s[0].shape[0] == BATCH_SIZE
 
-    patch_mean = 116.
-    print patch_mean
-    remove_mean = lambda s: s - patch_mean
+    patch_mean = 128.
+    patch_sd = 128.
+    remove_mean = lambda s: (s - patch_mean) / patch_sd
 
     print 'Starting network training'
     for e in range(0, EPOCH):
         print "Training Epoch", str(e)
         train_data >> NOP(Filter(is_cirrus)) >> Map(
             rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
-            100) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
+            100) >> NOP(PrintColType()) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
             viewer) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
             train_batch) >> log_cols_train >> Consume()
 

@@ -64,7 +64,7 @@ def calculate_oct_y_range(img, tresh=1e-10):
         return 0, img.shape[0]
 
 
-def sample_retouch_patches(img, mask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
+def sample_patches_entropy_mask(img, mask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
     """
     Generate patches from the interesting region of the OCT slice
     :param img: oct image slice
@@ -101,9 +101,38 @@ def sample_retouch_patches(img, mask=None, pshape=(224, 224), npos=10, nneg=1, p
         # plt.clf()
 
 
+def sample_patches_retouch_mask(img, mask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
+    """
+    Generate patches from the interesting region of the OCT slice
+    :param img: oct image slice
+    :param mask: oct segmentation GT
+    :param pshape: patch shape
+    :param npos: Number of patches to sample from interesting region
+    :param nneg: Number of patches to sample from non interesting region
+    :param pos: Mask value indicating positives
+    :param neg: Mask value indicating negative
+    :param patch_border: boder to ignore when creating IRF,SRF,PED labels for patches (ignore border pixels for predicting labels)
+    :return: 
+    """
+    assert mask.dtype == np.uint8
+    roi_mask = np.logical_not(mask == 0)
+
+    it = ni.sample_patch_centers(roi_mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg)
+    for r, c, label in it:
+        img_patch = ni.extract_patch(img, pshape, r, c)
+        mask_patch = ni.extract_patch(mask, pshape, r, c)
+        label_IRF = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == IRF_CODE))
+        label_SRF = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
+        label_PED = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
+        yield img_patch, mask_patch, label_IRF, label_SRF, label_PED
+        # plt.plot(c, r, 'ro')
+
+        # plt.pause(.1)
+        # plt.clf()
+
 @nut_processor
 def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, pshape, npos,
-                              nneg, pos=255, neg=0, patch_border=12):
+                              nneg, pos=255, neg=0, patch_border=12, use_entropy=False):
     """
     :param iterable: iterable: Samples with images
     :param imagecol: Index of sample column that contain image
@@ -128,16 +157,27 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
         if image.shape[:2] != mask.shape:
             raise ValueError('Image and mask size don''t match!')
 
-        # TODO : Further test downscaling strategy
-        if img_height > 700:
-            # print 'Cirrus image'
-            it = sample_retouch_patches(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
-                                        neg=neg,
-                                        patch_border=patch_border)
+        if use_entropy:
+            # TODO : Further test downscaling strategy
+            if img_height > 700:
+                # print 'Cirrus image'
+                it = sample_patches_entropy_mask(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
+                                            neg=neg,
+                                            patch_border=patch_border)
+            else:
+                # print 'Spectralisis image'
+                it = sample_patches_entropy_mask(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg,
+                                            patch_border=patch_border)
         else:
-            # print 'Spectralisis image'
-            it = sample_retouch_patches(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg,
-                                        patch_border=patch_border)
+            if img_height > 700:
+                # print 'Cirrus image'
+                it = sample_patches_retouch_mask(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
+                                            neg=neg,
+                                            patch_border=patch_border)
+            else:
+                # print 'Spectralisis image'
+                it = sample_patches_retouch_mask(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg,
+                                            patch_border=patch_border)
 
         for img_patch, mask_patch, label_IRF, label_SRF, label_PED in it:
             outsample = list(sample)[:]

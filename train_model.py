@@ -7,7 +7,7 @@ import numpy as np
 from custom_networks import retouch_dual_net
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 if platform.system() == 'Linux':
     DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/'

@@ -1,6 +1,6 @@
 import keras.backend as KB
 import tensorflow as tf
-BATCH_SIZE = 16
+from hyper_parameters import *
 
 
 def multiclass_balanced_cross_entropy_loss(y_true, y_pred):
@@ -56,7 +56,7 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
 def binary_prob(x):
     # TODO : test line 2
     pos = KB.expand_dims(x[:, 1], axis=-1)
-    neg = KB.ones((BATCH_SIZE,1),  dtype='float32') - pos
+    neg = KB.ones((BATCH_SIZE, 1),  dtype='float32') - pos
     return KB.concatenate([neg, pos], axis=-1)
 
 
@@ -337,3 +337,84 @@ def retouch_unet(input_shape=(224, 224, 3)):
     return model
 
 
+def retouch_vgg_net_classify(input_shape=(224, 224, 3)):
+    from keras.models import Sequential
+    from keras.layers import Conv2D, SpatialDropout2D, GlobalAveragePooling2D, Input, Dense, UpSampling2D, \
+        AveragePooling2D, GlobalMaxPooling2D, Lambda, MaxPooling2D, Flatten
+    from keras.layers.advanced_activations import LeakyReLU
+    from keras.layers.normalization import BatchNormalization
+    from keras.layers.merge import concatenate
+    from keras.layers import Activation
+    from keras.models import Model
+    from keras.utils import plot_model
+    from custom_layers import Softmax4D
+    from keras.optimizers import SGD, Adam
+    from keras import backend as K
+    from keras.applications.vgg16 import VGG16
+
+    img_input = Input(shape=input_shape)
+
+    # Block 1
+    b1 = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1')(img_input)
+    b1 = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv2')(b1)
+    b1 = MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool')(b1)
+
+    # Block 2
+    b2 = Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv1')(b1)
+    b2 = Conv2D(128, (3, 3), activation='relu', padding='same', name='block2_conv2')(b2)
+    b2 = MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool')(b2)
+
+    # Block 3
+    b3 = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv1')(b2)
+    b3 = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv2')(b3)
+    b3 = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv3')(b3)
+    b3 = MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool')(b3)
+
+    # Block 4
+    b4 = Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv1')(b3)
+    b4 = Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv2')(b4)
+    b4 = Conv2D(512, (3, 3), activation='relu', padding='same', name='block4_conv3')(b4)
+    b4 = MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool')(b4)
+
+    # Block 5
+    b5 = Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv1')(b4)
+    b5 = Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv2')(b5)
+    b5 = Conv2D(512, (3, 3), activation='relu', padding='same', name='block5_conv3')(b5)
+    b5 = MaxPooling2D((2, 2), strides=(2, 2), name='block5_pool')(b5)
+    b5 = SpatialDropout2D(0.5, name='block5_drop')(b5)
+
+    apool = AveragePooling2D(pool_size=(7, 7), data_format='channels_last', name='apool6')(b5)
+
+    # Slice classification outputs
+    sm_IRF = Conv2D(2, (1, 1), strides=(1, 1), padding='same', activation='relu', name='IRF_conv')(apool)
+    sm_IRF = Softmax4D(axis=-1, name='IRF_softmax')(sm_IRF)
+    sm_IRF = GlobalMaxPooling2D(data_format='channels_last', name='IRF_maxpool')(sm_IRF)
+    sm_IRF = Lambda(binary_prob, output_shape=binary_prob_out_shape, name='sm_IRF')(sm_IRF)
+
+    sm_SRF = Conv2D(2, (1, 1), strides=(1, 1), padding='same', activation='relu', name='SRF_conv')(apool)
+    sm_SRF = Softmax4D(axis=-1, name='SRF_softmax')(sm_SRF)
+    sm_SRF = GlobalMaxPooling2D(data_format='channels_last', name='SRF_maxpool')(sm_SRF)
+    sm_SRF = Lambda(binary_prob, output_shape=binary_prob_out_shape, name='sm_SRF')(sm_SRF)
+
+    sm_PED = Conv2D(2, (1, 1), strides=(1, 1), padding='same', activation='relu', name='PED_conv')(apool)
+    sm_PED = Softmax4D(axis=-1, name='PED_softmax')(sm_PED)
+    sm_PED = GlobalMaxPooling2D(data_format='channels_last', name='PED_maxpool')(sm_PED)
+    sm_PED = Lambda(binary_prob, output_shape=binary_prob_out_shape, name='sm_PED')(sm_PED)
+
+    model = Model(inputs=img_input, outputs=[sm_IRF, sm_SRF, sm_PED])
+
+    base_model = VGG16(weights='imagenet', include_top=False)
+
+    for layer in model.layers:
+        if 'block' in layer.name and 'conv' in layer.name:
+            vgg_layer = base_model.get_layer(name=layer.name)
+            layer.set_weights(vgg_layer.get_weights())
+            layer.trainable = False
+
+    model.summary()
+
+    sgd = SGD(lr=0.001, momentum=0.5, decay=1e-6, nesterov=False)
+    model.compile(optimizer=sgd, loss={'sm_IRF': 'categorical_crossentropy', 'sm_SRF': 'categorical_crossentropy',
+                                       'sm_PED': 'categorical_crossentropy'})
+
+    return model

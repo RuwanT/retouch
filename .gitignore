@@ -13,6 +13,7 @@ __pycache__/
 *.png
 *.h5
 *.idea*
+
 # Distribution / packaging
 .Python
 env/

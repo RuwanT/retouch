@@ -21,7 +21,7 @@ def visualize_images():
     data = ReadPandas(train_file, dropnan=True)
     data = data >> Shuffle(4000) >> Collect()
 
-    is_topcon = lambda v: v[1] == 'Cirrus'
+    is_topcon = lambda v: v[1] == 'Topcon'
 
     def rearange_cols(sample):
         """
@@ -193,7 +193,7 @@ def train_model():
             filter_batch_shape) >> Map(test_batch) >> log_cols_test >> Consume()
 
         # save weights
-        model.save_weights('./outputs/weights.h5')
+        model.save_weights('./outputs/weights_retouch_c_vgg.h5')
 
 
 if __name__ == "__main__":

@@ -351,6 +351,7 @@ def retouch_vgg_net_classify(input_shape=(224, 224, 3)):
     from keras.optimizers import SGD, Adam
     from keras import backend as K
     from keras.applications.vgg16 import VGG16
+    import os
 
     img_input = Input(shape=input_shape)
 
@@ -403,17 +404,28 @@ def retouch_vgg_net_classify(input_shape=(224, 224, 3)):
 
     model = Model(inputs=img_input, outputs=[sm_IRF, sm_SRF, sm_PED])
 
-    base_model = VGG16(weights='imagenet', include_top=False)
+    if os.path.isfile('./outputs/weights_retouch_c_vgg.h5'):
+        print 'Using existing weight file'
+        model.load_weights('./outputs/weights_retouch_c_vgg.h5')
+        for layer in model.layers:
+            if 'block' in layer.name and 'conv' in layer.name:
+                if 'block1_conv1' in layer.name:
+                    layer.trainable = True
+                else:
+                    layer.trainable = False
 
-    for layer in model.layers:
-        if 'block' in layer.name and 'conv' in layer.name:
-            vgg_layer = base_model.get_layer(name=layer.name)
-            layer.set_weights(vgg_layer.get_weights())
-            layer.trainable = False
+    else:
+        print 'Using imagenet weights'
+        base_model = VGG16(weights='imagenet', include_top=False)
+        for layer in model.layers:
+            if 'block' in layer.name and 'conv' in layer.name:
+                vgg_layer = base_model.get_layer(name=layer.name)
+                layer.set_weights(vgg_layer.get_weights())
+                layer.trainable = False
 
     model.summary()
 
-    sgd = SGD(lr=0.001, momentum=0.5, decay=1e-6, nesterov=False)
+    sgd = SGD(lr=0.001, momentum=0.5, decay=1e-8, nesterov=False)
     model.compile(optimizer=sgd, loss={'sm_IRF': 'categorical_crossentropy', 'sm_SRF': 'categorical_crossentropy',
                                        'sm_PED': 'categorical_crossentropy'})
 

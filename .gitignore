@@ -7,13 +7,10 @@ __pycache__/
 *.so
 *.npy
 *.csv
-*.xml
 *.tiff
 *.mhd
 *.png
 *.h5
-*.idea*
-
 # Distribution / packaging
 .Python
 env/

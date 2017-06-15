@@ -12,10 +12,8 @@ from skimage.color import rgb2gray
 import skimage.io as sio
 import os.path
 import scipy
+from hyper_parameters import *
 
-IRF_CODE = 1
-SRF_CODE = 2
-PED_CODE = 3
 
 
 def calculate_oct_y_range(img, tresh=1e-10):
@@ -129,6 +127,7 @@ def sample_patches_retouch_mask(img, mask=None, pshape=(224, 224), npos=10, nneg
 
         # plt.pause(.1)
         # plt.clf()
+
 
 @nut_processor
 def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, pshape, npos,

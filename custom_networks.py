@@ -1,10 +1,9 @@
 import keras.backend as KB
 import tensorflow as tf
-BATCH_SIZE = 16
+from hyper_parameters import *
 
 
 def multiclass_balanced_cross_entropy_loss(y_true, y_pred):
-
     # TODO: Check behavior when all classes are not present
     # shape = KB.int_shape(y_pred)
     batch_size = BATCH_SIZE
@@ -27,8 +26,7 @@ def multiclass_balanced_cross_entropy_loss(y_true, y_pred):
 
 
 def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
-
-    # TODO: Check behavior when all classes are not present
+    # TODO: Check behavior droped the zero class
     # shape = KB.int_shape(y_pred)
     CROP_SHAPE = KB.int_shape(y_pred)
     print CROP_SHAPE
@@ -44,11 +42,16 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
     cross_ent = KB.sum(cross_ent, axis=-2, keepdims=False)
     cross_ent = KB.reshape(cross_ent, shape=(batch_size, num_classes))
 
-    y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
-    y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
-    y_true_ = KB.reshape(y_true_, shape=(batch_size, num_classes)) + KB.ones(shape=(batch_size, num_classes))
+    # y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
+    # y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
+    # y_true_ = KB.reshape(y_true_, shape=(batch_size, num_classes)) + KB.ones(shape=(batch_size, num_classes))
 
-    cross_ent = (cross_ent / y_true_) * KB.variable(CROP_SHAPE[1]*CROP_SHAPE[2], dtype='float32')
+    # calculate balance weights
+    balance_score = KB.concatenate([KB.ones(shape=(batch_size, 1)) * KB.variable(0.05, dtype='float32'),
+                                    KB.ones(shape=(batch_size, num_classes - 1))], axis=-1)
+    cross_ent = cross_ent * balance_score
+
+    # cross_ent = (cross_ent / y_true_)
 
     return - KB.mean(cross_ent, axis=-1, keepdims=False)
 
@@ -56,7 +59,7 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
 def binary_prob(x):
     # TODO : test line 2
     pos = KB.expand_dims(x[:, 1], axis=-1)
-    neg = KB.ones((BATCH_SIZE,1),  dtype='float32') - pos
+    neg = KB.ones((BATCH_SIZE, 1), dtype='float32') - pos
     return KB.concatenate([neg, pos], axis=-1)
 
 
@@ -105,8 +108,8 @@ def retouch_dual_net(input_shape=(64, 512, 512, 1)):
 
     conv2_1 = Conv2D(256, [3, 3], strides=(1, 1), padding='same')(conv1_2)
     conv2_1 = LeakyReLU(alpha=0.3)(conv2_1)
-    #conv2_2 = Conv2D(256, [3, 3], strides=(1, 1), padding='same')(conv2_1)
-    #conv2_2 = LeakyReLU(alpha=0.3)(conv2_2)
+    # conv2_2 = Conv2D(256, [3, 3], strides=(1, 1), padding='same')(conv2_1)
+    # conv2_2 = LeakyReLU(alpha=0.3)(conv2_2)
     conv2_3 = Conv2D(256, [3, 3], strides=(2, 2), use_bias=False, padding='same')(conv2_1)
     conv2_3 = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001, center=True, scale=True,
                                  beta_initializer='zeros', gamma_initializer='ones',
@@ -115,8 +118,8 @@ def retouch_dual_net(input_shape=(64, 512, 512, 1)):
 
     conv3_1 = Conv2D(512, [3, 3], strides=(1, 1), padding='same')(conv2_3)
     conv3_1 = LeakyReLU(alpha=0.3)(conv3_1)
-    #conv3_2 = Conv2D(512, [3, 3], strides=(1, 1), padding='same')(conv3_1)
-    #conv3_2 = LeakyReLU(alpha=0.3)(conv3_2)
+    # conv3_2 = Conv2D(512, [3, 3], strides=(1, 1), padding='same')(conv3_1)
+    # conv3_2 = LeakyReLU(alpha=0.3)(conv3_2)
     conv3_3 = Conv2D(512, [3, 3], strides=(2, 2), use_bias=False, padding='same')(conv3_1)
     conv3_3 = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001, center=True, scale=True,
                                  beta_initializer='zeros', gamma_initializer='ones',
@@ -129,8 +132,8 @@ def retouch_dual_net(input_shape=(64, 512, 512, 1)):
                                  moving_mean_initializer='zeros', moving_variance_initializer='ones')(conv4_1)
     conv4_1 = LeakyReLU(alpha=0.3)(conv4_1)
     conv4_1 = SpatialDropout2D(0.5)(conv4_1)
-    #conv4_2 = Conv2D(4096, [1, 1], strides=(1, 1), padding='same')(conv4_1)
-    #conv4_2 = SpatialDropout2D(0.5)(conv4_2)
+    # conv4_2 = Conv2D(4096, [1, 1], strides=(1, 1), padding='same')(conv4_1)
+    # conv4_2 = SpatialDropout2D(0.5)(conv4_2)
 
     apool = AveragePooling2D(pool_size=(14, 14), data_format='channels_last')(conv4_1)
 
@@ -288,37 +291,55 @@ def retouch_unet(input_shape=(224, 224, 3)):
     from keras import backend as K
     from keras.layers import Cropping2D
 
+    # TODO : Add drop out to crop layer
+
     in_image = Input(shape=input_shape)
 
-    conv1_0 = Conv2D(64, (7, 7), activation='relu', name='conv1_0', padding='same', data_format='channels_last')(in_image)
+    conv1_0 = Conv2D(64, (7, 7), activation='relu', name='conv1_0', padding='same', data_format='channels_last')(
+        in_image)
     conv1_1 = Conv2D(64, (3, 3), activation='relu', name='conv1_1', data_format='channels_last')(conv1_0)
-    conv1_2 = Conv2D(64, (3, 3), activation='relu', name='conv1_2', data_format='channels_last')(conv1_1)
+    conv1_2 = Conv2D(64, (3, 3), name='conv1_2', data_format='channels_last')(conv1_1)
+    conv1_2 = BatchNormalization(axis=-1, name='bn1')(conv1_2)
+    conv1_2 = Activation('relu')(conv1_2)
+
     pool1 = MaxPooling2D(pool_size=(2, 2), name='pool1', data_format='channels_last')(conv1_2)
-
     conv2_1 = Conv2D(128, (3, 3), activation='relu', name='conv2_1', data_format='channels_last')(pool1)
-    conv2_2 = Conv2D(128, (3, 3), activation='relu', name='conv2_2', data_format='channels_last')(conv2_1)
+    conv2_2 = Conv2D(128, (3, 3), name='conv2_2', data_format='channels_last')(conv2_1)
+    conv2_2 = BatchNormalization(axis=-1, name='bn2')(conv2_2)
+    conv2_2 = Activation('relu')(conv2_2)
+
     pool2 = MaxPooling2D(pool_size=(2, 2), name='pool2', data_format='channels_last')(conv2_2)
-
     conv3_1 = Conv2D(256, (3, 3), activation='relu', name='conv3_1', data_format='channels_last')(pool2)
-    conv3_2 = Conv2D(256, (3, 3), activation='relu', name='conv3_2', data_format='channels_last')(conv3_1)
+    conv3_2 = Conv2D(256, (3, 3), name='conv3_2', data_format='channels_last')(conv3_1)
+    conv3_2 = BatchNormalization(axis=-1, name='bn3')(conv3_2)
+    conv3_2 = Activation('relu')(conv3_2)
+
     pool3 = MaxPooling2D(pool_size=(2, 2), name='pool3', data_format='channels_last')(conv3_2)
-
     conv4_1 = Conv2D(512, (3, 3), activation='relu', name='conv4_1', data_format='channels_last')(pool3)
-    conv4_2 = Conv2D(512, (3, 3), activation='relu', name='conv4_2', data_format='channels_last')(conv4_1)
+    conv4_2 = Conv2D(512, (3, 3), name='conv4_2', data_format='channels_last')(conv4_1)
+    conv4_2 = BatchNormalization(axis=-1, name='bn4')(conv4_2)
+    conv4_2 = Activation('relu')(conv4_2)
 
-    upool3 = Deconv2D(256, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool3')(conv4_2)
+    upool3 = Deconv2D(256, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool3')(
+        conv4_2)
     crop3 = Cropping2D(cropping=((5, 4), (5, 4)), data_format='channels_last')(conv3_2)
     merge3 = concatenate([upool3, crop3], axis=-1, name='merge3')
     dconv3_1 = Conv2D(256, (3, 3), activation='relu', name='dconv3_1', data_format='channels_last')(merge3)
-    dconv3_2 = Conv2D(256, (3, 3), activation='relu', name='dconv3_2', data_format='channels_last')(dconv3_1)
+    dconv3_2 = Conv2D(256, (3, 3), name='dconv3_2', data_format='channels_last')(dconv3_1)
+    dconv3_2 = BatchNormalization(axis=-1, name='bn3d')(dconv3_2)
+    dconv3_2 = Activation('relu')(dconv3_2)
 
-    upool2 = Deconv2D(128, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool2')(dconv3_2)
+    upool2 = Deconv2D(128, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool2')(
+        dconv3_2)
     crop2 = Cropping2D(cropping=((17, 17), (17, 17)), data_format='channels_last')(conv2_2)
     merge2 = concatenate([upool2, crop2], axis=-1, name='merge2')
     dconv2_1 = Conv2D(128, (3, 3), activation='relu', name='dconv2_1', data_format='channels_last')(merge2)
-    dconv2_2 = Conv2D(128, (3, 3), activation='relu', name='dconv2_2', data_format='channels_last')(dconv2_1)
+    dconv2_2 = Conv2D(128, (3, 3), name='dconv2_2', data_format='channels_last')(dconv2_1)
+    dconv2_2 = BatchNormalization(axis=-1, name='bn2d')(dconv2_2)
+    dconv2_2 = Activation('relu')(dconv2_2)
 
-    upool1 = Deconv2D(64, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool1')(dconv2_2)
+    upool1 = Deconv2D(64, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool1')(
+        dconv2_2)
     crop1 = Cropping2D(cropping=((42, 42), (42, 42)), data_format='channels_last')(conv1_2)
     merge1 = concatenate([upool1, crop1], axis=-1, name='merge1')
     dconv1_1 = Conv2D(64, (3, 3), activation='relu', name='dconv1_1', data_format='channels_last')(merge1)
@@ -328,12 +349,10 @@ def retouch_unet(input_shape=(224, 224, 3)):
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)
 
     model = Model(inputs=in_image, outputs=seg_out)
-    sgd = SGD(lr=0.001, momentum=0.9, decay=1e-6, nesterov=False)
+    sgd = SGD(lr=0.0001, momentum=0.9, decay=1e-8, nesterov=False, clipnorm=1.)
     model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
 
     model.summary()
     # plot(model, to_file='a.png', show_shapes=True)
 
     return model
-
-

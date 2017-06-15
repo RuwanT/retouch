@@ -6,25 +6,22 @@ import platform
 import numpy as np
 from custom_networks import retouch_dual_net
 import os
-
+from hyper_parameters import *
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 if platform.system() == 'Linux':
     DATA_ROOT = '/home/truwan/DATA/retouch/pre_processed/'
 else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
-BATCH_SIZE = 16
-EPOCH = 10
-PATCH_SIZE = 256
-
 
 def visualize_images():
     train_file = DATA_ROOT + 'slice_gt.csv'
     data = ReadPandas(train_file, dropnan=True)
-    data = data >> Shuffle(4000) >> Collect()
+    data = data >> Shuffle(7000) >> Collect()
 
-    is_topcon = lambda v: v[1] == 'Cirrus'
+    is_topcon = lambda v: v[1] == 'Topcon'
 
     def rearange_cols(sample):
         """
@@ -47,10 +44,11 @@ def visualize_images():
     mask_reader = ReadImage(1, maskpath)
 
     viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=.1)
-    slice_oct = lambda x: x[:,:,1]
+    slice_oct = lambda x: x[:, :, 1]
 
     # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(PATCH_SIZE, PATCH_SIZE),
+    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
+                                              pshape=(PATCH_SIZE, PATCH_SIZE),
                                               npos=20, nneg=2, pos=1)
 
     data >> NOP(Filter(is_topcon)) >> Map(
@@ -58,7 +56,6 @@ def visualize_images():
 
 
 def train_model():
-
     if not os.path.isfile('./outputs/train_data_.csv'):
         print 'generating new test train SPLIT'
         # reading training data
@@ -125,8 +122,9 @@ def train_model():
     mask_reader = ReadImage(1, maskpath)
 
     # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4, pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=20, nneg=2, pos=1, use_entropy=False)
+    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
+                                              pshape=(PATCH_SIZE, PATCH_SIZE),
+                                              npos=5, nneg=2, pos=1, use_entropy=False)
 
     # viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
 
@@ -139,6 +137,8 @@ def train_model():
                          .by(4, 'one_hot', 'uint8', 2))
 
     is_cirrus = lambda v: v[1] == 'Cirrus'
+    is_topcon = lambda v: v[1] == 'Topcon'
+    is_spectralis = lambda v: v[1] == 'Spectralis'
 
     # TODO : Should I drop non-pathelogical slices
     # Filter to drop all non-pathology patches
@@ -162,12 +162,12 @@ def train_model():
 
     def train_batch(sample):
         # outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
-        outp = model.train_on_batch(sample[0], [sample[1],])
+        outp = model.train_on_batch(sample[0], sample[1])
         return (outp,)
 
     def test_batch(sample):
         # outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
-        outp = model.test_on_batch(sample[0], [sample[1],])
+        outp = model.test_on_batch(sample[0], sample[1])
         return (outp,)
 
     log_cols_train = LogCols('./outputs/train_log.csv', cols=None, colnames=model.metrics_names)
@@ -179,18 +179,20 @@ def train_model():
     patch_sd = 128.
     remove_mean = lambda s: (s - patch_mean) / patch_sd
 
+    # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network training'
     for e in range(0, EPOCH):
         print "Training Epoch", str(e)
-        train_data >> NOP(Filter(is_cirrus)) >> Map(
-            rearange_cols) >> img_reader >> mask_reader >> augment_1 >> augment_2 >> Shuffle(
-            100) >> NOP(PrintColType()) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> FilterFalse(drop_patch) >> NOP(
-            viewer) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
+        train_data >> FilterFalse(is_topcon) >> Map(
+            rearange_cols) >> img_reader >> mask_reader >> NOP(augment_1) >> NOP(augment_2) >> NOP(Shuffle(
+            100)) >> NOP(PrintColType()) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> NOP(FilterFalse(
+            drop_patch)) >> NOP(viewer) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
             train_batch) >> log_cols_train >> Consume()
 
         print "Testing Epoch", str(e)
-        val_data >> NOP(Filter(is_cirrus)) >> Map(
-            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0, remove_mean) >> build_batch_train >> Filter(
+        val_data >> FilterFalse(is_topcon) >> Map(
+            rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0,
+                                                                                   remove_mean) >> build_batch_train >> Filter(
             filter_batch_shape) >> Map(test_batch) >> log_cols_test >> Consume()
 
         # save weights

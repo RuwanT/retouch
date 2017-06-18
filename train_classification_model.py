@@ -161,12 +161,12 @@ def train_model():
     def train_batch(sample):
         outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4]])
         # outp = model.train_on_batch(sample[0], [sample[1],])
-        return (outp,)
+        return outp
 
     def test_batch(sample):
         outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4]])
         # outp = model.test_on_batch(sample[0], [sample[1],])
-        return (outp,)
+        return outp
 
     log_cols_train = LogCols('./outputs/train_log.csv', cols=None, colnames=model.metrics_names)
     log_cols_test = LogCols('./outputs/test_log.csv', cols=None, colnames=model.metrics_names)

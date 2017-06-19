@@ -181,7 +181,7 @@ def train_model():
 
     patch_mean = 128.
     patch_sd = 128.
-    remove_mean = lambda s: (s - patch_mean) / patch_sd
+    remove_mean = lambda s: (s.astype(np.float32) - patch_mean) / patch_sd
 
     # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network training'

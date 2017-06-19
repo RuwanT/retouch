@@ -1,4 +1,4 @@
-from custom_networks import retouch_dual_net, retouch_vgg_net, retouch_unet
+from custom_networks import retouch_dual_net, retouch_vgg_net, retouch_unet, retouch_unet_no_drop
 from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT
 from nutsflow import *
 from nutsml import *
@@ -8,7 +8,7 @@ from custom_networks import retouch_dual_net
 import os
 from hyper_parameters import *
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 if platform.system() == 'Linux':
@@ -16,7 +16,7 @@ if platform.system() == 'Linux':
 else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
-weight_file = './outputs/weights_epoch100.h5'
+weight_file = './outputs/weights.h5'
 
 
 def visualize_images():
@@ -127,9 +127,9 @@ def test_model():
     # define the model
     # model = retouch_vgg_net(input_shape=(224, 224, 3))
     model = retouch_unet(input_shape=(PATCH_SIZE, PATCH_SIZE, 3))
-    if LOAD_WEIGTHS:
-        assert os.path.isfile(weight_file)
-        model.load_weights(weight_file)
+
+    assert os.path.isfile(weight_file)
+    model.load_weights(weight_file)
 
     def predict_batch(sample):
         outp = model.predict(sample[0])
@@ -148,7 +148,7 @@ def test_model():
     # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network Testing'
 
-    val_data >> FilterFalse(is_topcon) >> Map(
+    train_data >> FilterFalse(is_topcon) >> Map(
         rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(
         1000) >> build_batch_test >> Filter(filter_batch_shape) >> Map(predict_batch) >> MapCol(0, add_mean) >> MapCol(
         1, extract_label) >> MapCol(2, extract_label) >> MapCol(2,mask_pad)>> res_viewer >> Consume()

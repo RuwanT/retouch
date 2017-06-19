@@ -50,10 +50,10 @@ def visualize_images():
     # randomly sample image patches from the interesting region (based on entropy)
     image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
                                               pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=20, nneg=2, pos=1)
+                                              npos=20, nneg=2, pos=1, use_entropy=False)
 
-    data >> NOP(Filter(is_topcon)) >> Map(
-        rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
+    # data >> NOP(Filter(is_topcon)) >> Map(
+    #     rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
 
 
 def train_model():

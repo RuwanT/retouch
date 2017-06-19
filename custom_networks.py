@@ -291,6 +291,7 @@ def retouch_unet(input_shape=(224, 224, 3)):
     from keras import backend as K
     from keras.layers import Cropping2D
 
+
     # TODO : Add drop out to crop layer
 
     in_image = Input(shape=input_shape)
@@ -301,24 +302,28 @@ def retouch_unet(input_shape=(224, 224, 3)):
     conv1_2 = Conv2D(64, (3, 3), name='conv1_2', data_format='channels_last')(conv1_1)
     conv1_2 = BatchNormalization(axis=-1, name='bn1')(conv1_2)
     conv1_2 = Activation('relu')(conv1_2)
+    conv1_2 = SpatialDropout2D(0.5, data_format='channels_last')(conv1_2)
 
     pool1 = MaxPooling2D(pool_size=(2, 2), name='pool1', data_format='channels_last')(conv1_2)
     conv2_1 = Conv2D(128, (3, 3), activation='relu', name='conv2_1', data_format='channels_last')(pool1)
     conv2_2 = Conv2D(128, (3, 3), name='conv2_2', data_format='channels_last')(conv2_1)
     conv2_2 = BatchNormalization(axis=-1, name='bn2')(conv2_2)
     conv2_2 = Activation('relu')(conv2_2)
+    conv2_2 = SpatialDropout2D(0.5, data_format='channels_last')(conv2_2)
 
     pool2 = MaxPooling2D(pool_size=(2, 2), name='pool2', data_format='channels_last')(conv2_2)
     conv3_1 = Conv2D(256, (3, 3), activation='relu', name='conv3_1', data_format='channels_last')(pool2)
     conv3_2 = Conv2D(256, (3, 3), name='conv3_2', data_format='channels_last')(conv3_1)
     conv3_2 = BatchNormalization(axis=-1, name='bn3')(conv3_2)
     conv3_2 = Activation('relu')(conv3_2)
+    conv3_2 = SpatialDropout2D(0.5, data_format='channels_last')(conv3_2)
 
     pool3 = MaxPooling2D(pool_size=(2, 2), name='pool3', data_format='channels_last')(conv3_2)
     conv4_1 = Conv2D(512, (3, 3), activation='relu', name='conv4_1', data_format='channels_last')(pool3)
     conv4_2 = Conv2D(512, (3, 3), name='conv4_2', data_format='channels_last')(conv4_1)
     conv4_2 = BatchNormalization(axis=-1, name='bn4')(conv4_2)
     conv4_2 = Activation('relu')(conv4_2)
+    conv4_2 = SpatialDropout2D(0.5, data_format='channels_last')(conv4_2)
 
     upool3 = Deconv2D(256, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool3')(
         conv4_2)
@@ -328,6 +333,7 @@ def retouch_unet(input_shape=(224, 224, 3)):
     dconv3_2 = Conv2D(256, (3, 3), name='dconv3_2', data_format='channels_last')(dconv3_1)
     dconv3_2 = BatchNormalization(axis=-1, name='bn3d')(dconv3_2)
     dconv3_2 = Activation('relu')(dconv3_2)
+    dconv3_2 = SpatialDropout2D(0.5, data_format='channels_last')(dconv3_2)
 
     upool2 = Deconv2D(128, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool2')(
         dconv3_2)
@@ -337,6 +343,7 @@ def retouch_unet(input_shape=(224, 224, 3)):
     dconv2_2 = Conv2D(128, (3, 3), name='dconv2_2', data_format='channels_last')(dconv2_1)
     dconv2_2 = BatchNormalization(axis=-1, name='bn2d')(dconv2_2)
     dconv2_2 = Activation('relu')(dconv2_2)
+    dconv2_2 = SpatialDropout2D(0.5, data_format='channels_last')(dconv2_2)
 
     upool1 = Deconv2D(64, kernel_size=2, strides=2, padding='same', data_format='channels_last', name='upool1')(
         dconv2_2)
@@ -344,6 +351,7 @@ def retouch_unet(input_shape=(224, 224, 3)):
     merge1 = concatenate([upool1, crop1], axis=-1, name='merge1')
     dconv1_1 = Conv2D(64, (3, 3), activation='relu', name='dconv1_1', data_format='channels_last')(merge1)
     dconv1_2 = Conv2D(64, (3, 3), activation='relu', name='dconv1_2', data_format='channels_last')(dconv1_1)
+    dconv1_2 = SpatialDropout2D(0.25, data_format='channels_last')(dconv1_2)
 
     seg_out = Conv2D(4, (1, 1), activation='relu', name='outp', data_format='channels_last')(dconv1_2)
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)

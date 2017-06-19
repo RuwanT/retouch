@@ -15,6 +15,7 @@ if platform.system() == 'Linux':
 else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
+weight_file = './outputs/weights.h5'
 
 def visualize_images():
     train_file = DATA_ROOT + 'slice_gt.csv'
@@ -159,6 +160,9 @@ def train_model():
     # define the model
     # model = retouch_vgg_net(input_shape=(224, 224, 3))
     model = retouch_unet(input_shape=(PATCH_SIZE, PATCH_SIZE, 3))
+    if LOAD_WEIGTHS:
+        assert os.path.isfile(weight_file)
+        model.load_weights(weight_file)
 
     def train_batch(sample):
         # outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
@@ -196,7 +200,7 @@ def train_model():
             filter_batch_shape) >> Map(test_batch) >> log_cols_test >> Consume()
 
         # save weights
-        model.save_weights('./outputs/weights.h5')
+        model.save_weights(weight_file)
 
 
 if __name__ == "__main__":

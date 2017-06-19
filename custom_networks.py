@@ -357,10 +357,14 @@ def retouch_unet(input_shape=(224, 224, 3)):
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)
 
     model = Model(inputs=in_image, outputs=seg_out)
-    sgd = SGD(lr=0.0001, momentum=0.9, decay=1e-8, nesterov=False, clipnorm=1.)
+    sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=2000.)
     model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
 
     model.summary()
     # plot(model, to_file='a.png', show_shapes=True)
 
     return model
+
+
+def retouch_discriminator(input_shape=(224, 224, 3)):
+    # discriminator

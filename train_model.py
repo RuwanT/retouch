@@ -50,10 +50,10 @@ def visualize_images():
     # randomly sample image patches from the interesting region (based on entropy)
     image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
                                               pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=20, nneg=2, pos=1)
+                                              npos=20, nneg=2, pos=1, use_entropy=False)
 
-    data >> NOP(Filter(is_topcon)) >> Map(
-        rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
+    # data >> NOP(Filter(is_topcon)) >> Map(
+    #     rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
 
 
 def train_model():
@@ -125,7 +125,7 @@ def train_model():
     # randomly sample image patches from the interesting region (based on entropy)
     image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
                                               pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=5, nneg=2, pos=1, use_entropy=False)
+                                              npos=7, nneg=2, pos=1, use_entropy=False)
 
     # viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
 
@@ -181,7 +181,7 @@ def train_model():
 
     patch_mean = 128.
     patch_sd = 128.
-    remove_mean = lambda s: (s - patch_mean) / patch_sd
+    remove_mean = lambda s: (s.astype(np.float32) - patch_mean) / patch_sd
 
     # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network training'

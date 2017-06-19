@@ -125,7 +125,7 @@ def train_model():
     # randomly sample image patches from the interesting region (based on entropy)
     image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
                                               pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=5, nneg=2, pos=1, use_entropy=False)
+                                              npos=7, nneg=2, pos=1, use_entropy=False)
 
     # viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=1)
 

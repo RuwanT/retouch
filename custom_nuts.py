@@ -3,17 +3,47 @@ import os.path as path
 import random as rnd
 import nutsml.datautil as ut
 import nutsml.imageutil as ni
-from skimage.morphology import disk, rectangle
+from skimage.morphology import disk, rectangle, closing, opening, binary_closing, convex_hull_image
 from skimage.filters.rank import entropy
 import matplotlib.pyplot as plt
 from nutsflow import Nut, NutFunction, nut_processor, as_tuple, as_set, nut_function
 import skimage
+import skimage.transform
 from skimage.color import rgb2gray
 import skimage.io as sio
 import os.path
 import scipy
 from hyper_parameters import *
+from PIL import Image
+import matplotlib.patches
 
+SHAPE_MULT = {1024: 2., 496: 1., 650: 0.004 / 0.0035, 885: 0.004 / 0.0026}
+
+
+def calculate_oct_roi_mask(img, tresh=1e-10):
+    """
+        Calculate the interesting region MASK of the image using entropy
+        :param img: 
+        :param tresh: entropy cutoff threshold
+        :return: mask of the interesting region (MASK = 1 interesting)
+        """
+    if img.ndim == 2:
+        im_slice = skimage.img_as_float(img.astype(np.float32) / 128. - 1.)
+    elif img.ndim == 3:
+        im_slice = skimage.img_as_float(img[:, :, 1].astype(np.float32) / 128. - 1.)
+    assert img.ndim in {2, 3}
+    im_slice_ = entropy(im_slice, disk(11))
+    im_slice_ = im_slice_ / (np.max(im_slice_) + 1e-16)
+    im_slice_ = np.asarray(im_slice_ > tresh, dtype=np.int8)
+    selem = disk(35)
+    im_slice_ = binary_closing(im_slice_, selem=selem)
+    im_slice_ = convex_hull_image(im_slice_)
+
+    plt.imshow(im_slice, cmap='gray')
+    plt.imshow(im_slice_, cmap='jet', alpha=0.5)
+    plt.pause(.1)
+
+    return im_slice_
 
 
 def calculate_oct_y_range(img, tresh=1e-10):
@@ -29,7 +59,7 @@ def calculate_oct_y_range(img, tresh=1e-10):
     elif img.ndim == 3:
         im_slice = skimage.img_as_float(img[:, :, 1].astype(np.float32) / 128. - 1.)
     assert img.ndim in {2, 3}
-    im_slice_ = entropy(im_slice, disk(15))
+    im_slice_ = entropy(im_slice, disk(11))
     p_ = np.mean(im_slice_, axis=1)
     p_ = p_ / (np.max(p_) + 1e-16)
     p_ = np.asarray(p_ > tresh, dtype=np.int)
@@ -37,6 +67,18 @@ def calculate_oct_y_range(img, tresh=1e-10):
 
     # im_slice_ = im_slice_ / (np.max(im_slice_) + 1e-16)
     # im_slice_ = np.asarray(im_slice_ > tresh, dtype=np.int)
+    #
+    #
+    # plt.subplot(1,3,1)
+    # plt.imshow(im_slice)
+    # plt.subplot(1,3,2)
+    # plt.imshow(im_slice_)
+    # plt.subplot(1,3,3)
+    # selem = disk(35)
+    # im_slice_ = binary_closing(im_slice_,selem=selem)
+    # plt.imshow(im_slice_)
+    # plt.pause(.1)
+
     # y = list()
     # for i in range(0, im_slice_.shape[1]):
     #     if np.any(im_slice_[:,i]==1):
@@ -62,11 +104,39 @@ def calculate_oct_y_range(img, tresh=1e-10):
         return 0, img.shape[0]
 
 
-def sample_patches_entropy_mask(img, mask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
+def sample_oct_patch_centers(roimask, pshape, npos, pos=1, neg=0):
+    PYINX = 0
+    PXINX = 1
+    h, w = roimask.shape
+
+    x = range(pshape[PXINX] / 2, w - pshape[PXINX] / 2, 10)
+    x_samples = np.random.choice(x, npos * 2, replace=False)
+    np.random.shuffle(x_samples)
+    c_hold = list()
+    for x in x_samples:
+        nz = np.nonzero(roimask[:, x] == pos)[0]
+        if len(nz) > 0:
+            y = int(float(np.min(nz)) + (
+                (float(np.max(nz)) - float(np.min(nz))) / 2.) + np.random.uniform()) + np.random.randint(-10, 10)
+            if (y - pshape[PYINX] / 2) < 1:
+                y = int(pshape[PYINX] / 2) + 1
+            elif (y + pshape[PYINX] / 2) >= h:
+                y = h - int(pshape[PYINX] / 2) - 1
+
+            c_hold.append([y, x, 1])
+        if len(c_hold) >= npos:
+            break
+
+    return c_hold
+
+
+def sample_patches_entropy_mask(img, mask=None, roimask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0,
+                                patch_border=12):
     """
     Generate patches from the interesting region of the OCT slice
     :param img: oct image slice
     :param mask: oct segmentation GT
+    :param roimask: oct ROI
     :param pshape: patch shape
     :param npos: Number of patches to sample from interesting region
     :param nneg: Number of patches to sample from non interesting region
@@ -75,17 +145,23 @@ def sample_patches_entropy_mask(img, mask=None, pshape=(224, 224), npos=10, nneg
     :param patch_border: boder to ignore when creating IRF,SRF,PED labels for patches (ignore border pixels for predicting labels)
     :return: 
     """
-    y_min, y_max = calculate_oct_y_range(img)
-    roi_mask = np.zeros(mask.shape, dtype=np.int8)
-    # print y_min, y_max
-    roi_mask[y_min:y_max, :] = pos
-    # TODO : Why 32?
-    roi_mask[y_min:y_min + 32, :] = 0
-    roi_mask[y_max - 32:y_max, :] = 0
-    # plt.imshow(img)
-    # print np.max(roi_mask), np.min(roi_mask)
 
-    it = ni.sample_patch_centers(roi_mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg)
+    # y_min, y_max = calculate_oct_y_range(img)
+    # roi_mask = np.zeros(mask.shape, dtype=np.int8)
+    # # print y_min, y_max
+    # roi_mask[y_min:y_max, :] = pos
+    # # TODO : Why 32?
+    # roi_mask[y_min:y_min + 32, :] = 0
+    # roi_mask[y_max - 32:y_max, :] = 0
+    # # plt.imshow(img)
+    # # print np.max(roi_mask), np.min(roi_mask)
+
+    roimask = roimask.astype(np.int8)
+    # it = ni.sample_patch_centers(roimask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg)
+    it = sample_oct_patch_centers(roimask, pshape=pshape, npos=npos, pos=pos, neg=neg)
+    # h,w = roimask.shape
+    # fig1 = plt.figure()
+    # ax1 = fig1.add_subplot(111, aspect='equal')
     for r, c, label in it:
         img_patch = ni.extract_patch(img, pshape, r, c)
         mask_patch = ni.extract_patch(mask, pshape, r, c)
@@ -93,10 +169,15 @@ def sample_patches_entropy_mask(img, mask=None, pshape=(224, 224), npos=10, nneg
         label_SRF = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
         label_PED = np.int8(np.any(mask_patch[patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
         yield img_patch, mask_patch, label_IRF, label_SRF, label_PED
-        # plt.plot(c, r, 'ro')
 
-        # plt.pause(.1)
-        # plt.clf()
+        # ax1.imshow(img, cmap='gray')
+        # ax1.imshow(roimask, cmap='jet', alpha=0.5)
+        # ax1.plot(c, r, 'ro')
+        # # print h,r, pshape[0], h-(r+int(pshape[0]/2))
+        # ax1.add_patch(matplotlib.patches.Rectangle(xy=(c-int(pshape[1]/2), (r-int(pshape[0]/2))), width=pshape[1], height=pshape[0], fill=False, edgecolor="red"))
+
+    # plt.pause(1)
+    # plt.close()
 
 
 def sample_patches_retouch_mask(img, mask=None, pshape=(224, 224), npos=10, nneg=1, pos=255, neg=0, patch_border=12):
@@ -130,7 +211,7 @@ def sample_patches_retouch_mask(img, mask=None, pshape=(224, 224), npos=10, nneg
 
 
 @nut_processor
-def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, pshape, npos,
+def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, roicol, pshape, npos,
                               nneg, pos=255, neg=0, patch_border=12, use_entropy=False):
     """
     :param iterable: iterable: Samples with images
@@ -150,7 +231,7 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
     """
 
     for sample in iterable:
-        image, mask = sample[imagecol], sample[maskcol]
+        image, mask, roim = sample[imagecol], sample[maskcol], sample[roicol]
         img_height = image.shape[0]
 
         if image.shape[:2] != mask.shape:
@@ -160,23 +241,26 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
             # TODO : Further test downscaling strategy
             if img_height > 700:
                 # print 'Cirrus image'
-                it = sample_patches_entropy_mask(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
-                                            neg=neg,
-                                            patch_border=patch_border)
+                it = sample_patches_entropy_mask(image, mask, roimask=roim, pshape=(pshape[0] * 2, pshape[1]),
+                                                 npos=npos, nneg=nneg, pos=pos,
+                                                 neg=neg,
+                                                 patch_border=patch_border)
             else:
                 # print 'Spectralisis image'
-                it = sample_patches_entropy_mask(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg,
-                                            patch_border=patch_border)
+                it = sample_patches_entropy_mask(image, mask, roimask=roim, pshape=pshape, npos=npos, nneg=nneg,
+                                                 pos=pos, neg=neg,
+                                                 patch_border=patch_border)
         else:
             if img_height > 700:
                 # print 'Cirrus image'
-                it = sample_patches_retouch_mask(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg, pos=pos,
-                                            neg=neg,
-                                            patch_border=patch_border)
+                it = sample_patches_retouch_mask(image, mask, pshape=(pshape[0] * 2, pshape[1]), npos=npos, nneg=nneg,
+                                                 pos=pos,
+                                                 neg=neg,
+                                                 patch_border=patch_border)
             else:
                 # print 'Spectralisis image'
                 it = sample_patches_retouch_mask(image, mask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg,
-                                            patch_border=patch_border)
+                                                 patch_border=patch_border)
 
         for img_patch, mask_patch, label_IRF, label_SRF, label_PED in it:
             outsample = list(sample)[:]
@@ -197,8 +281,154 @@ def ImagePatchesByMaskRetouch(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDco
             outsample[IRFcol] = label_IRF
             outsample[SRFcol] = label_SRF
             outsample[PEDcol] = label_PED
+            # TODO : does it need to yield roim
 
             yield tuple(outsample)
+
+
+@nut_processor
+def ImagePatchesByMaskRetouch_resampled(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, roicol, pshape, npos,
+                                        nneg, pos=255, neg=0, patch_border=12, use_entropy=False):
+    """
+    :param iterable: iterable: Samples with images
+    :param imagecol: Index of sample column that contain image
+    :param maskcol: Index of sample column that contain mask
+    :param IRFcol: Index of sample column that contain IRF label
+    :param SRFcol: Index of sample column that contain SRF label
+    :param PEDcol: Index of sample column that contain PED label
+    :param pshape: Shape of patch
+    :param npos: Number of patches to sample from interesting region
+    :param nneg: Number of patches to sample from outside interesting region
+    :param pos: Mask value indicating positives
+    :param neg: Mask value indicating negativr
+    :param patch_border: boder to ignore when creating IRF,SRF,PED labels for patches (ignore border pixels for predicting labels)
+    :return: Iterator over samples where images and masks are replaced by image and mask patches
+        and labels are replaced by labels [0,1] for patches
+    """
+
+    for sample in iterable:
+        image, mask, roim = sample[imagecol], sample[maskcol], sample[roicol]
+        img_height = image.shape[0]
+
+        if image.shape[:2] != mask.shape:
+            raise ValueError('Image and mask size don''t match!')
+
+        assert img_height in {1024, 496, 650, 885}
+        npshape = (int(pshape[0] * SHAPE_MULT[img_height]), pshape[1])
+        if use_entropy:
+            # TODO : Further test downscaling strategy
+            it = sample_patches_entropy_mask(image, mask, roimask=roim, pshape=npshape, npos=npos, nneg=nneg, pos=pos,
+                                             neg=neg, patch_border=patch_border)
+
+        else:
+            it = sample_patches_retouch_mask(image, mask, pshape=npshape, npos=npos, nneg=nneg,
+                                             pos=pos, neg=neg, patch_border=patch_border)
+
+        for img_patch, mask_patch, label_IRF, label_SRF, label_PED in it:
+            outsample = list(sample)[:]
+
+            if img_height == 496:
+                outsample[imagecol] = img_patch
+                outsample[maskcol] = mask_patch
+            else:
+                outsample[imagecol] = skimage.transform.resize(img_patch.astype(np.uint8), pshape, order=0, preserve_range=True).astype('uint8')
+                # img_patch = Image.fromarray(np.uint8(img_patch))
+                # img_patch_ = img_patch.resize(pshape, resample=Image.NEAREST)
+                # outsample[imagecol] = np.asarray(img_patch_)
+
+                # mask_patch = Image.fromarray(np.uint8(mask_patch), mode='L')
+                # mask_patch_ = mask_patch.resize(pshape, resample=Image.NEAREST)
+                # outsample[maskcol] = np.asarray(mask_patch_)
+                outsample[maskcol] = skimage.transform.resize(mask_patch.astype(np.uint8), pshape, order=0, preserve_range=True).astype('uint8')
+
+            outsample[IRFcol] = np.int8(np.any(outsample[maskcol][patch_border:-patch_border, patch_border:-patch_border] == IRF_CODE))
+            outsample[SRFcol] = np.int8(np.any(outsample[maskcol][patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
+            outsample[PEDcol] = np.int8(np.any(outsample[maskcol][patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
+            # TODO : does it need to yield roim
+
+            yield tuple(outsample)
+
+
+@nut_processor
+def ImagePatchesForTest_resampled(iterable, imagecol, maskcol, IRFcol, SRFcol, PEDcol, roicol, pshape, npos,
+                                        nneg, pos=255, neg=0, patch_border=12, use_entropy=False):
+    """
+    :param iterable: iterable: Samples with images
+    :param imagecol: Index of sample column that contain image
+    :param maskcol: Index of sample column that contain mask
+    :param IRFcol: Index of sample column that contain IRF label
+    :param SRFcol: Index of sample column that contain SRF label
+    :param PEDcol: Index of sample column that contain PED label
+    :param pshape: Shape of patch
+    :param npos: Number of patches to sample from interesting region
+    :param nneg: Number of patches to sample from outside interesting region
+    :param pos: Mask value indicating positives
+    :param neg: Mask value indicating negativr
+    :param patch_border: boder to ignore when creating IRF,SRF,PED labels for patches (ignore border pixels for predicting labels)
+    :return: Iterator over samples where images and masks are replaced by image and mask patches
+        and labels are replaced by labels [0,1] for patches
+    """
+
+    for sample in iterable:
+        image, mask, roim = sample[imagecol], sample[maskcol], sample[roicol]
+        img_height = image.shape[0]
+
+        if image.shape[:2] != mask.shape:
+            raise ValueError('Image and mask size don''t match!')
+
+        assert img_height in {1024, 496, 650, 885}
+        npshape = (int(pshape[0] * SHAPE_MULT[img_height]), pshape[1])
+        if use_entropy:
+            # TODO : Further test downscaling strategy
+            roimask = roim.astype(np.int8)
+            nx_y = np.nonzero(np.sum(roimask, axis=1))[0]
+            # print nx_y
+            if len(nx_y) > 0:
+                miny, maxy = float(np.min(nx_y)), float(np.max(nx_y))
+                print miny, maxy
+                y = int(miny + (maxy-miny)/2.)
+                if not y > int(float(npshape[0])/2.):
+                    y = int(float(npshape[0])/2.)
+            else:
+                y = int(float(npshape[0])/2)
+            print y
+            img_patch = image[y - npshape[0] / 2:y + npshape[0] / 2, :, :]
+            mask_patch = mask[y - npshape[0] / 2:y + npshape[0] / 2, :]
+            roi_patch = roim[y - npshape[0] / 2:y + npshape[0] / 2, :]
+            # it = sample_patches_entropy_mask(image, mask, roimask=roim, pshape=npshape, npos=npos, nneg=nneg, pos=pos,
+            #                                  neg=neg, patch_border=patch_border)
+
+        else:
+            print "Error"
+            # it = sample_patches_retouch_mask(image, mask, pshape=npshape, npos=npos, nneg=nneg,
+            #                                  pos=pos, neg=neg, patch_border=patch_border)
+
+        # for img_patch, mask_patch, label_IRF, label_SRF, label_PED in it:
+        outsample = list(sample)[:]
+
+        if img_height == 496:
+            outsample[imagecol] = img_patch
+            outsample[maskcol] = mask_patch
+            outsample[roicol] = roi_patch
+        else:
+            outsample[imagecol] = skimage.transform.resize(img_patch.astype(np.uint8), pshape, order=0, preserve_range=True).astype('uint8')
+            # img_patch = Image.fromarray(np.uint8(img_patch))
+            # img_patch_ = img_patch.resize(pshape, resample=Image.NEAREST)
+            # outsample[imagecol] = np.asarray(img_patch_)
+
+            # mask_patch = Image.fromarray(np.uint8(mask_patch), mode='L')
+            # mask_patch_ = mask_patch.resize(pshape, resample=Image.NEAREST)
+            # outsample[maskcol] = np.asarray(mask_patch_)
+            outsample[maskcol] = skimage.transform.resize(mask_patch.astype(np.uint8), pshape, order=0, preserve_range=True).astype('uint8')
+            outsample[roicol] = skimage.transform.resize(roi_patch.astype(np.uint8), pshape, order=0,
+                                                          preserve_range=True).astype('uint8')
+
+        outsample[IRFcol] = np.int8(np.any(outsample[maskcol][patch_border:-patch_border, patch_border:-patch_border] == IRF_CODE))
+        outsample[SRFcol] = np.int8(np.any(outsample[maskcol][patch_border:-patch_border, patch_border:-patch_border] == SRF_CODE))
+        outsample[PEDcol] = np.int8(np.any(outsample[maskcol][patch_border:-patch_border, patch_border:-patch_border] == PED_CODE))
+        # TODO : does it need to yield roim
+
+        yield tuple(outsample)
 
 
 def load_oct_image(filepath, as_grey=False, dtype='uint8', no_alpha=True):
@@ -218,6 +448,7 @@ def load_oct_image(filepath, as_grey=False, dtype='uint8', no_alpha=True):
              pixel values are in range [0,255] for dtype = uint8
     :rtype: numpy ndarray
     """
+    # TODO : think about z axis of the spectralasis images, they have different spacing than other two
     if filepath.endswith('.npy'):  # image as numpy array
         print "reading numpy OCT not yet implemented..."
         # arr = np.load(filepath).astype(dtype)

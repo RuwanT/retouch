@@ -1,5 +1,5 @@
 from custom_networks import retouch_dual_net, retouch_vgg_net, retouch_unet, retouch_unet_no_drop
-from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT
+from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT, ImagePatchesByMaskRetouch_resampled, ImagePatchesForTest_resampled
 from nutsflow import *
 from nutsml import *
 import platform
@@ -19,43 +19,43 @@ else:
 weight_file = './outputs/weights.h5'
 
 
-def visualize_images():
-    train_file = DATA_ROOT + 'slice_gt.csv'
-    data = ReadPandas(train_file, dropnan=True)
-    data = data >> Shuffle(7000) >> Collect()
-
-    is_topcon = lambda v: v[1] == 'Topcon'
-
-    def rearange_cols(sample):
-        """
-        Re-arrange the incoming data stream to desired outputs
-        :param sample: 
-        :return: 
-        """
-        img = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
-        mask = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
-        IRF_label = sample[4]
-        SRF_label = sample[5]
-        PED_label = sample[6]
-
-        return (img, mask, IRF_label, SRF_label, PED_label)
-
-    # setting up image ad mask readers
-    imagepath = DATA_ROOT + 'oct_imgs/*'
-    maskpath = DATA_ROOT + 'oct_masks/*'
-    img_reader = ReadOCT(0, imagepath)
-    mask_reader = ReadImage(1, maskpath)
-
-    viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=.1)
-    slice_oct = lambda x: x[:, :, 1]
-
-    # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
-                                              pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=20, nneg=2, pos=1)
-
-    data >> NOP(Filter(is_topcon)) >> Map(
-        rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
+# def visualize_images():
+#     train_file = DATA_ROOT + 'slice_gt.csv'
+#     data = ReadPandas(train_file, dropnan=True)
+#     data = data >> Shuffle(7000) >> Collect()
+#
+#     is_topcon = lambda v: v[1] == 'Topcon'
+#
+#     def rearange_cols(sample):
+#         """
+#         Re-arrange the incoming data stream to desired outputs
+#         :param sample:
+#         :return:
+#         """
+#         img = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
+#         mask = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
+#         IRF_label = sample[4]
+#         SRF_label = sample[5]
+#         PED_label = sample[6]
+#
+#         return (img, mask, IRF_label, SRF_label, PED_label)
+#
+#     # setting up image ad mask readers
+#     imagepath = DATA_ROOT + 'oct_imgs/*'
+#     maskpath = DATA_ROOT + 'oct_masks/*'
+#     img_reader = ReadOCT(0, imagepath)
+#     mask_reader = ReadImage(1, maskpath)
+#
+#     viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=.1)
+#     slice_oct = lambda x: x[:, :, 1]
+#
+#     # randomly sample image patches from the interesting region (based on entropy)
+#     image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
+#                                               pshape=(PATCH_SIZE, PATCH_SIZE),
+#                                               npos=20, nneg=2, pos=1)
+#
+#     data >> NOP(Filter(is_topcon)) >> Map(
+#         rearange_cols) >> img_reader >> mask_reader >> MapCol(0, slice_oct) >> image_patcher >> Consume()
 
 
 def test_model():
@@ -80,19 +80,24 @@ def test_model():
         IRF_label = sample[4]
         SRF_label = sample[5]
         PED_label = sample[6]
+        roi_m = sample[1] + '_' + sample[0] + '_' + str(sample[3]).zfill(3) + '.tiff'
 
-        return (img, mask, IRF_label, SRF_label, PED_label)
+        return (img, mask, IRF_label, SRF_label, PED_label, roi_m)
 
-    # setting up image and mask readers
+    # setting up image ad mask readers
     imagepath = DATA_ROOT + 'oct_imgs/*'
     maskpath = DATA_ROOT + 'oct_masks/*'
+    roipath = DATA_ROOT + 'roi_masks/*'
+
     img_reader = ReadOCT(0, imagepath)
     mask_reader = ReadImage(1, maskpath)
+    roi_reader = ReadImage(5, roipath)
 
     # randomly sample image patches from the interesting region (based on entropy)
-    image_patcher = ImagePatchesByMaskRetouch(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
-                                              pshape=(PATCH_SIZE, PATCH_SIZE),
-                                              npos=5, nneg=2, pos=1, use_entropy=False)
+    image_patcher = ImagePatchesForTest_resampled(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
+                                                        roicol=5,
+                                                        pshape=(PATCH_SIZE_H, 512),
+                                                        npos=7, nneg=2, pos=1, use_entropy=True, patch_border=42)
 
     res_viewer = ViewImage(imgcols=(0, 1, 2), layout=(1, 3), pause=1)
 
@@ -102,7 +107,8 @@ def test_model():
                         .by(1, 'one_hot', 'uint8', 4)
                         .by(2, 'one_hot', 'uint8', 2)
                         .by(3, 'one_hot', 'uint8', 2)
-                        .by(4, 'one_hot', 'uint8', 2))
+                        .by(4, 'one_hot', 'uint8', 2)
+                        .by(5, 'one_hot', 'uint8', 4))
 
     is_cirrus = lambda v: v[1] == 'Cirrus'
     is_topcon = lambda v: v[1] == 'Topcon'
@@ -112,6 +118,7 @@ def test_model():
     # Filter to drop all non-pathology patches
     no_pathology = lambda s: (s[2] == 0) and (s[3] == 0) and (s[4] == 0)
 
+    # Filter to drop some non-pathology patches
     def drop_patch(sample, drop_prob=0.9):
         """
         Randomly drop a patch from iterator if there is no pathology
@@ -120,13 +127,13 @@ def test_model():
         :return: 
         """
         if (int(sample[2]) == 0) and (int(sample[3]) == 0) and (int(sample[4]) == 0):
-            return float(np.random.random_sample(1)) < drop_prob
+            return float(np.random.random_sample()) < drop_prob
         else:
             return False
 
     # define the model
     # model = retouch_vgg_net(input_shape=(224, 224, 3))
-    model = retouch_unet(input_shape=(PATCH_SIZE, PATCH_SIZE, 3))
+    model = retouch_unet(input_shape=(PATCH_SIZE_H, 512, 3))
 
     assert os.path.isfile(weight_file)
     model.load_weights(weight_file)
@@ -144,14 +151,14 @@ def test_model():
     add_mean = lambda s: np.asarray((s[0, :] * patch_sd) + patch_mean, dtype=np.int8)
     extract_label = lambda s: np.argmax(s[0,:], axis=-1)
     mask_pad = lambda s: np.pad(s, pad_width=46, mode='constant', constant_values=0.)
+    mask_edge = lambda s: s[46:-46, 46:-46]
 
     # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network Testing'
 
-    val_data >> FilterFalse(is_topcon) >> Map(
-        rearange_cols) >> img_reader >> mask_reader >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(
-        1000) >> build_batch_test >> Filter(filter_batch_shape) >> Map(predict_batch) >> MapCol(0, add_mean) >> MapCol(
-        1, extract_label) >> MapCol(2, extract_label) >> MapCol(2,mask_pad) >> res_viewer >> Consume()
+    val_data >> Map(
+        rearange_cols) >> img_reader >> mask_reader >> roi_reader >> image_patcher >> MapCol(0, remove_mean) >> NOP(FilterFalse(drop_patch)) >> build_batch_test >> Filter(filter_batch_shape) >> Map(predict_batch) >> MapCol(0, add_mean) >> MapCol(
+        1, extract_label) >> MapCol(1, mask_edge) >> MapCol(1, mask_pad) >> MapCol(2, extract_label) >> MapCol(2, mask_pad) >> MapCol(3, extract_label) >> PrintColType() >> res_viewer >> Consume()
 
 
 if __name__ == "__main__":

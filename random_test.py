@@ -136,10 +136,28 @@ import platform
 #             calculate_oct_y_range(img, tresh=1e-10)
 
 
-DATA_ROOT = '/home/truwan/DATA/retouch/Topcon/'
-for subdir, dirs, files in os.walk(DATA_ROOT):
-    for file in files:
-        filepath = subdir + os.sep + file
-        if filepath.endswith(".mhd"):
-            img, _, s = mhd.load_oct_image(filepath)
-            print img.shape, s
+# DATA_ROOT = '/home/truwan/DATA/retouch/Spectralis/'
+# sshape = set()
+# sdim = set()
+# for subdir, dirs, files in os.walk(DATA_ROOT):
+#     for file in files:
+#         filepath = subdir + os.sep + file
+#         if filepath.endswith(".mhd"):
+#             img, _, s = mhd.load_oct_image(filepath)
+#             print img.shape, s
+#             sshape.add(img.shape)
+#             sdim.add(tuple(s))
+#
+# print sshape
+# print sdim
+
+
+from nutsflow import *
+from nutsml import *
+import numpy as np
+a = np.zeros((100, 100), dtype=np.int8)
+a[40:60, 40:60] = 4
+
+augment_2 = (AugmentImage((1,)).by('rotate', 1.0, [10, 50]))
+img_viewer = ViewImage(imgcols=(0, 1), layout=(1, 2), pause=10)
+[(a, a),] >> augment_2 >> img_viewer >> Consume()

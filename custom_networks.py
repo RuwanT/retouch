@@ -47,11 +47,11 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
     y_true_ = KB.reshape(y_true_, shape=(batch_size, num_classes)) + KB.epsilon()
 
     # calculate balance weights
-    balance_score = KB.concatenate([KB.ones(shape=(batch_size, 1)) * KB.variable(0.1, dtype='float32'),
-                                    KB.ones(shape=(batch_size, num_classes - 1))], axis=-1)
+    # balance_score = KB.concatenate([KB.ones(shape=(batch_size, 1)) * KB.variable(0.1, dtype='float32'),
+    #                                 KB.ones(shape=(batch_size, num_classes - 1))], axis=-1)
     # cross_ent = cross_ent * balance_score
 
-    cross_ent = (cross_ent / y_true_) * balance_score
+    cross_ent = (cross_ent / y_true_)  # * balance_score
 
     return - KB.mean(cross_ent, axis=-1, keepdims=False)
 
@@ -352,6 +352,7 @@ def retouch_unet(input_shape=(224, 224, 3)):
 
     seg_out = Conv2D(4, (1, 1), activation='relu', name='outp', data_format='channels_last')(dconv1_2)
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)
+
 
     model = Model(inputs=in_image, outputs=seg_out)
     sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)

@@ -7,7 +7,7 @@ import numpy as np
 from custom_networks import retouch_dual_net
 import os
 from hyper_parameters import *
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 if platform.system() == 'Linux':
@@ -187,7 +187,7 @@ def train_model():
     print 'Starting network training'
     for e in range(0, EPOCH):
         print "Training Epoch", str(e)
-        train_data >> FilterFalse(is_topcon) >> Map(
+        train_data >> NOP(FilterFalse(is_topcon)) >> Map(
             rearange_cols) >> img_reader >> mask_reader >> NOP(augment_1) >> NOP(augment_2) >> NOP(Shuffle(
             100)) >> NOP(PrintColType()) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> NOP(FilterFalse(
             drop_patch)) >> NOP(viewer) >> build_batch_train >> Filter(filter_batch_shape) >> Map(

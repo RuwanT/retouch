@@ -292,3 +292,17 @@ def ReadOCT(sample, columns, pathfunc=None, as_grey=False, dtype='uint8'):
     colset = as_set(columns)
     elems = enumerate(sample)
     return tuple(load(e) if i in colset else e for i, e in elems)
+
+# @nut_processor
+# def OCTImageResize(iterable, imagecol, maskcol, reshape_height):
+#
+#     for sample in iterable:
+#         image, mask = sample[imagecol], sample[maskcol]
+#         img_height = image.shape[0]
+#
+#         # assert img_height > reshape_height
+#         y_min, y_max = calculate_oct_y_range(image)
+#         y_mid = np.floor((y_max - y_min)/2)
+#
+#         if img_height < 512:
+#             #spectralasis image

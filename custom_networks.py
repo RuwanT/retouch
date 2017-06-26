@@ -29,7 +29,7 @@ def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
     # TODO: Check behavior droped the zero class
     # shape = KB.int_shape(y_pred)
     CROP_SHAPE = KB.int_shape(y_pred)
-    print CROP_SHAPE
+    # print CROP_SHAPE
     batch_size = BATCH_SIZE
     num_classes = 4
 
@@ -350,16 +350,80 @@ def retouch_unet(input_shape=(224, 224, 3)):
     dconv1_2 = Conv2D(64, (3, 3), activation='relu', name='dconv1_2', data_format='channels_last')(dconv1_1)
     dconv1_2 = SpatialDropout2D(0.25, data_format='channels_last')(dconv1_2)
 
-    seg_out = Conv2D(4, (1, 1), activation='relu', name='outp', data_format='channels_last')(dconv1_2)
+    seg_out = Conv2D(NB_CLASSES, (1, 1), activation='relu', name='outp', data_format='channels_last')(dconv1_2)
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)
 
-
     model = Model(inputs=in_image, outputs=seg_out)
-    sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
-    model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
+    # sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
+    # model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
 
-    model.summary()
-    plot_model(model, to_file='./outputs/model_unet.png', show_shapes=True)
+    # model.summary()
+    # plot_model(model, to_file='./outputs/model_unet.png', show_shapes=True)
+
+    return model
+
+
+def retouch_discriminator(input_shape=(224, 224, 3)):
+    from keras.models import Sequential
+    from keras.layers import Conv2D, SpatialDropout2D, GlobalAveragePooling2D, Input, Dense, UpSampling2D, \
+        AveragePooling2D, GlobalMaxPooling2D, Lambda, MaxPooling2D, Flatten, Deconv2D
+    from keras.layers.advanced_activations import LeakyReLU
+    from keras.layers.normalization import BatchNormalization
+    from keras.layers.merge import concatenate
+    from keras.layers import Activation
+    from keras.models import Model
+    from keras.utils import plot_model
+    from custom_layers import Softmax4D
+    from keras.optimizers import SGD, Adam
+    from keras import backend as K
+    from keras.layers import Cropping2D
+
+    in_image = Input(shape=input_shape)
+    in_mask = Input(shape=(input_shape[0], input_shape[1], NB_CLASSES))
+
+    conv1_0_im = Conv2D(64, (7, 7), activation='relu', name='conv1_0_', padding='same', data_format='channels_last')(
+        in_image)
+    conv1_1_im = Conv2D(64, (3, 3), activation='relu', name='conv1_1_', data_format='channels_last')(conv1_0_im)
+    conv1_2_im = Conv2D(64, (3, 3), name='conv1_2_', data_format='channels_last')(conv1_1_im)
+    conv1_2_im = BatchNormalization(axis=-1, name='bn1_')(conv1_2_im)
+    conv1_2_im = Activation('relu')(conv1_2_im)
+
+    conv1_0_mask = Conv2D(64, (7, 7), activation='relu', name='conv1_0_m', padding='same', data_format='channels_last')(
+        in_mask)
+    conv1_1_mask = Conv2D(64, (3, 3), activation='relu', name='conv1_1_m', data_format='channels_last')(conv1_0_mask)
+    conv1_2_mask = Conv2D(64, (3, 3), name='conv1_2_m', data_format='channels_last')(conv1_1_mask)
+    conv1_2_mask = BatchNormalization(axis=-1, name='bn1_m')(conv1_2_mask)
+    conv1_2_mask = Activation('relu')(conv1_2_mask)
+
+    conv1_2 = concatenate([conv1_2_im, conv1_2_mask], axis=-1, name='merge_in')
+
+    pool1 = MaxPooling2D(pool_size=(2, 2), name='pool1', data_format='channels_last')(conv1_2)
+    conv2_1 = Conv2D(128, (3, 3), activation='relu', name='conv2_1', data_format='channels_last')(pool1)
+    conv2_2 = Conv2D(128, (3, 3), name='conv2_2', data_format='channels_last')(conv2_1)
+    conv2_2 = BatchNormalization(axis=-1, name='bn2')(conv2_2)
+    conv2_2 = Activation('relu')(conv2_2)
+
+    pool2 = MaxPooling2D(pool_size=(2, 2), name='pool2', data_format='channels_last')(conv2_2)
+    conv3_1 = Conv2D(256, (3, 3), activation='relu', name='conv3_1', data_format='channels_last')(pool2)
+    conv3_2 = Conv2D(256, (3, 3), name='conv3_2', data_format='channels_last')(conv3_1)
+    conv3_2 = BatchNormalization(axis=-1, name='bn3')(conv3_2)
+    conv3_2 = Activation('relu')(conv3_2)
+
+    # pool3 = MaxPooling2D(pool_size=(2, 2), name='pool3', data_format='channels_last')(conv3_2)
+    # conv4_1 = Conv2D(512, (3, 3), activation='relu', name='conv4_1', data_format='channels_last')(pool3)
+    # conv4_2 = Conv2D(512, (3, 3), name='conv4_2', data_format='channels_last')(conv4_1)
+    # conv4_2 = BatchNormalization(axis=-1, name='bn4')(conv4_2)
+    # conv4_2 = Activation('relu')(conv4_2)
+
+    apool = GlobalAveragePooling2D(data_format='channels_last')(conv3_2)
+    disc_out = Dense(1, activation='sigmoid', name='disc_out')(apool)
+
+    model = Model(inputs=[in_image, in_mask], outputs=disc_out)
+    # sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
+    # model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
+
+    # model.summary()
+    # plot_model(model, to_file='./outputs/model_unet.png', show_shapes=True)
 
     return model
 

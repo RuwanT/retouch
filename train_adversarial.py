@@ -8,12 +8,13 @@ from custom_networks import retouch_dual_net
 import os
 from hyper_parameters import *
 import skimage.transform as skt
-from keras.optimizers import SGD
+from keras.optimizers import SGD, Adam
 from keras.layers import Input
 from keras.models import Model
-from keras.layers import Cropping2D
+from keras.layers import Cropping2D, Lambda
+import keras.backend as K
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 if platform.system() == 'Linux':
@@ -21,7 +22,7 @@ if platform.system() == 'Linux':
 else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
-weight_file = './outputs/weights.h5'
+pre_weight_file = '/home/truwan/projects/retouch/outputs/weights.h5'
 save_weight_file = './outputs/gan_weights.h5'
 
 
@@ -44,6 +45,18 @@ def print_trainability(model):
             print l.name,
 
     print " "
+
+
+def binarize_softmax(x):
+    import tensorflow as tf
+    x = K.argmax(x, axis=-1)
+    # x = tf.cast(x, dtype=tf.int8)
+    x = K.one_hot(x, num_classes=NB_CLASSES)
+
+    return x
+
+def binarize_softmax_output_shape(input_shape):
+    return input_shape
 
 
 def train_model():
@@ -151,50 +164,46 @@ def train_model():
     # define the model
     # TODO : change optimizer
     model_D = retouch_discriminator(input_shape=(PATCH_SIZE_H-BORDER_WIDTH*2, PATCH_SIZE_W-BORDER_WIDTH*2, 3))
-    sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
+    # opti = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
     set_trainability(model_D, trainable=True)
-    model_D.compile(optimizer=sgd, loss='binary_crossentropy')
-    # model_D.summary()
-    # print "Disc"
-    # print_trainability(model_D)
+    model_D.compile(optimizer=Adam(lr=ADAM_LR, beta_1=ADAM_BETA_1), loss='categorical_crossentropy')
 
     model_G = retouch_unet(input_shape=(PATCH_SIZE_H, PATCH_SIZE_W, 3))
-    sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
-    model_G.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
-    # print "Gen"
-    # print_trainability(model_G)
+    model_G.compile(optimizer=Adam(lr=ADAM_LR, beta_1=ADAM_BETA_1), loss=multiclass_balanced_cross_entropy_loss_unet)
 
-    set_trainability(model_D,trainable=False)
+    set_trainability(model_D, trainable=False)
     im_input = Input(shape=(PATCH_SIZE_H, PATCH_SIZE_W, 3))
-    im2_input = Cropping2D(cropping=((46, 46), (46, 46)), data_format='channels_last')(im_input)
-    # im2_input = Input(shape=(PATCH_SIZE_H-BORDER_WIDTH*2, PATCH_SIZE_W-BORDER_WIDTH*2, 3))
+    im2_input = Cropping2D(cropping=((BORDER_WIDTH, BORDER_WIDTH), (BORDER_WIDTH, BORDER_WIDTH)), data_format='channels_last')(im_input)
     G_out = model_G(im_input)
-    D_out = model_D([im2_input, G_out])
+    G_out_bz = Lambda(binarize_softmax, output_shape=binarize_softmax_output_shape)(G_out)
+    D_out = model_D([im2_input, G_out_bz])
     model_D_G = Model([im_input], [D_out, G_out])
-    sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
-    model_D_G.compile(optimizer=sgd, loss=['binary_crossentropy', multiclass_balanced_cross_entropy_loss_unet])
+    model_D_G.compile(optimizer=Adam(lr=ADAM_LR, beta_1=ADAM_BETA_1), loss=['categorical_crossentropy', multiclass_balanced_cross_entropy_loss_unet])
 
     if LOAD_WEIGTHS:
-        assert os.path.isfile(weight_file)
-        model_G.load_weights(weight_file)
+        assert os.path.isfile(pre_weight_file)
+        model_G.load_weights(pre_weight_file)
 
     def train_batch(sample):
         # train the discriminator
         set_trainability(model_D, trainable=True)
         generated_images = model_G.predict(sample[0], batch_size=BATCH_SIZE)
+        generated_images = np.argmax(generated_images, axis=-1).astype(np.uint8)
+        generated_images = np.eye(NB_CLASSES, dtype=np.uint8)[generated_images]
+
         # print generated_images.shape, sample[1][:, BORDER_WIDTH:-BORDER_WIDTH, BORDER_WIDTH:-BORDER_WIDTH, :].shape
         images = np.copy(sample[0][:, BORDER_WIDTH:-BORDER_WIDTH, BORDER_WIDTH:-BORDER_WIDTH, :])
         X_img = np.concatenate((sample[0][:, BORDER_WIDTH:-BORDER_WIDTH, BORDER_WIDTH:-BORDER_WIDTH, :], images), axis=0)
         X_mask = np.concatenate((sample[1][:, BORDER_WIDTH:-BORDER_WIDTH, BORDER_WIDTH:-BORDER_WIDTH, :], generated_images), axis=0)
-        y = np.asarray([1]*BATCH_SIZE + [0]*BATCH_SIZE, dtype=np.int8)
+        y = np.asarray([[0, 1]]*BATCH_SIZE + [[1, 0]]*BATCH_SIZE, dtype=np.int8)
         D_error = model_D.train_on_batch([X_img, X_mask], y)
 
         # train the Generator
         set_trainability(model_D, trainable=False)
-        y = np.asarray([1] * BATCH_SIZE, dtype=np.int8)
+        y = np.asarray([[0, 1]] * BATCH_SIZE, dtype=np.int8)
         G_error = model_D_G.train_on_batch(sample[0], [y, sample[1]])
 
-        return (D_error, G_error)
+        return (D_error, G_error[2])
 
     def test_batch(sample):
         # outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
@@ -234,6 +243,7 @@ def train_model():
             print 'saving weights at epoch: ', e, val_error
             model_G.save_weights(save_weight_file)
             best_error = val_error
+        model_G.save_weights('./outputs/funal_gan_weights.h5')
 
 
 if __name__ == "__main__":

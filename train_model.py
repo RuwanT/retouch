@@ -100,9 +100,9 @@ def train_model():
     build_batch_train = (BuildBatch(BATCH_SIZE, prefetch=0)
                          .by(0, 'image', 'float32', channelfirst=False)
                          .by(1, 'one_hot', 'uint8', 4)
-                         .by(2, 'one_hot', 'uint8', 2)
-                         .by(3, 'one_hot', 'uint8', 2)
-                         .by(4, 'one_hot', 'uint8', 2))
+                         .by(2, 'number', 'uint8')
+                         .by(3, 'number', 'uint8')
+                         .by(4, 'number', 'uint8'))
 
     is_cirrus = lambda v: v[1] == 'Cirrus'
     is_topcon = lambda v: v[1] == 'Topcon'
@@ -110,7 +110,7 @@ def train_model():
 
     # TODO : Should I drop non-pathelogical slices
     # Filter to drop some non-pathology patches
-    def drop_patch(sample, drop_prob=0.9):
+    def drop_patch(sample, drop_prob=0.75):
         """
         Randomly drop a patch from iterator if there is no pathology
         :param sample: 
@@ -125,18 +125,25 @@ def train_model():
     # define the model
     # model = retouch_vgg_net(input_shape=(224, 224, 3))
     model = retouch_unet(input_shape=(PATCH_SIZE_H, PATCH_SIZE_W, 3))
+
     if LOAD_WEIGTHS:
         assert os.path.isfile(weight_file)
         model.load_weights(weight_file)
 
     def train_batch(sample):
-        # outp = model.train_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
-        outp = model.train_on_batch(sample[0], sample[1])
+        if not TRAIN_CLASSES:
+            outp = model.train_on_batch(sample[0], sample[1])
+        else:
+            outp = model.train_on_batch(sample[0], [sample[1], sample[2], sample[3], sample[4]])
+            outp = outp[0]
         return (outp,)
 
     def test_batch(sample):
-        # outp = model.test_on_batch(sample[0], [sample[2], sample[3], sample[4], sample[1]])
-        outp = model.test_on_batch(sample[0], sample[1])
+        if not TRAIN_CLASSES:
+            outp = model.test_on_batch(sample[0], sample[1])
+        else:
+            outp = model.test_on_batch(sample[0], [sample[1], sample[2], sample[3], sample[4]])
+            outp = outp[0]
         return (outp,)
 
     log_cols_train = LogCols('./outputs/train_log.csv', cols=None, colnames=model.metrics_names)
@@ -151,14 +158,14 @@ def train_model():
     best_error = float("inf")
     print 'Starting network training'
     for e in range(0, EPOCH):
-        print "Training Epoch", str(e)
-        train_data >> Shuffle(1000) >> Map(
+        # print "Training Epoch", str(e)
+        train_error = train_data >> Shuffle(1000) >> Map(
             rearange_cols) >> img_reader >> mask_reader >> roi_reader >> augment_1 >> augment_2 >> Shuffle(
             100) >> image_patcher >> MapCol(0, remove_mean) >> Shuffle(1000) >> FilterFalse(
             drop_patch) >> build_batch_train >> Filter(filter_batch_shape) >> Map(
-            train_batch) >> log_cols_train >> Consume()
+            train_batch) >> log_cols_train >> Collect()
 
-        print "Testing Epoch", str(e)
+        # print "Testing Epoch", str(e)
         val_error = val_data >> Map(
             rearange_cols) >> img_reader >> mask_reader >> roi_reader >> image_patcher >> MapCol(0,
                                                                                                  remove_mean) >> FilterFalse(
@@ -166,11 +173,17 @@ def train_model():
             filter_batch_shape) >> Map(test_batch) >> log_cols_test >> Collect()
 
         val_error = np.mean([v[0] for v in val_error])
+        train_error = np.mean([v[0] for v in train_error])
+        print 'epoch ', e, 'train_error = ', train_error, 'val_error = ', val_error,
         if val_error < best_error:
             # save weights
-            print 'saving weights at epoch: ', e, val_error
+            print '... saving weights ...'
             model.save_weights(weight_file)
             best_error = val_error
+        else:
+            print "..."
+        if e >= EPOCH - 1:
+            model.save_weights('./outputs/final_weights.h5')
 
 
 if __name__ == "__main__":

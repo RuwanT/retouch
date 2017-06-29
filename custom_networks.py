@@ -276,7 +276,7 @@ def retouch_vgg_net(input_shape=(224, 224, 3)):
     return model
 
 
-def retouch_unet(input_shape=(224, 224, 3)):
+def retouch_unet(input_shape=(224, 224, 3), regularize_weight=0.0001):
     from keras.models import Sequential
     from keras.layers import Conv2D, SpatialDropout2D, GlobalAveragePooling2D, Input, Dense, UpSampling2D, \
         AveragePooling2D, GlobalMaxPooling2D, Lambda, MaxPooling2D, Flatten, Deconv2D
@@ -290,31 +290,42 @@ def retouch_unet(input_shape=(224, 224, 3)):
     from keras.optimizers import SGD, Adam
     from keras import backend as K
     from keras.layers import Cropping2D
+    from keras.regularizers import l2
+    from keras.activations import softmax
 
     in_image = Input(shape=input_shape)
 
-    conv1_0 = Conv2D(64, (7, 7), activation='relu', name='conv1_0', padding='same', data_format='channels_last')(
+    conv1_0 = Conv2D(64, (7, 7), activation='relu', name='conv1_0', padding='same', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(
         in_image)
-    conv1_1 = Conv2D(64, (3, 3), activation='relu', name='conv1_1', data_format='channels_last')(conv1_0)
-    conv1_2 = Conv2D(64, (3, 3), name='conv1_2', data_format='channels_last')(conv1_1)
+    conv1_1 = Conv2D(64, (3, 3), activation='relu', name='conv1_1', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(conv1_0)
+    conv1_2 = Conv2D(64, (3, 3), name='conv1_2', data_format='channels_last', kernel_regularizer=l2(regularize_weight))(
+        conv1_1)
     conv1_2 = BatchNormalization(axis=-1, name='bn1')(conv1_2)
     conv1_2 = Activation('relu')(conv1_2)
 
     pool1 = MaxPooling2D(pool_size=(2, 2), name='pool1', data_format='channels_last')(conv1_2)
-    conv2_1 = Conv2D(128, (3, 3), activation='relu', name='conv2_1', data_format='channels_last')(pool1)
-    conv2_2 = Conv2D(128, (3, 3), name='conv2_2', data_format='channels_last')(conv2_1)
+    conv2_1 = Conv2D(128, (3, 3), activation='relu', name='conv2_1', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(pool1)
+    conv2_2 = Conv2D(128, (3, 3), name='conv2_2', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(conv2_1)
     conv2_2 = BatchNormalization(axis=-1, name='bn2')(conv2_2)
     conv2_2 = Activation('relu')(conv2_2)
 
     pool2 = MaxPooling2D(pool_size=(2, 2), name='pool2', data_format='channels_last')(conv2_2)
-    conv3_1 = Conv2D(256, (3, 3), activation='relu', name='conv3_1', data_format='channels_last')(pool2)
-    conv3_2 = Conv2D(256, (3, 3), name='conv3_2', data_format='channels_last')(conv3_1)
+    conv3_1 = Conv2D(256, (3, 3), activation='relu', name='conv3_1', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(pool2)
+    conv3_2 = Conv2D(256, (3, 3), name='conv3_2', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(conv3_1)
     conv3_2 = BatchNormalization(axis=-1, name='bn3')(conv3_2)
     conv3_2 = Activation('relu')(conv3_2)
 
     pool3 = MaxPooling2D(pool_size=(2, 2), name='pool3', data_format='channels_last')(conv3_2)
-    conv4_1 = Conv2D(512, (3, 3), activation='relu', name='conv4_1', data_format='channels_last')(pool3)
-    conv4_2 = Conv2D(512, (3, 3), name='conv4_2', data_format='channels_last')(conv4_1)
+    conv4_1 = Conv2D(512, (3, 3), activation='relu', name='conv4_1', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(pool3)
+    conv4_2 = Conv2D(512, (3, 3), name='conv4_2', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight))(conv4_1)
     conv4_2 = BatchNormalization(axis=-1, name='bn4')(conv4_2)
     conv4_2 = Activation('relu')(conv4_2)
 
@@ -324,8 +335,10 @@ def retouch_unet(input_shape=(224, 224, 3)):
     crop3 = Cropping2D(cropping=((5, 4), (5, 4)), data_format='channels_last')(conv3_2)
     crop3 = SpatialDropout2D(0.25, data_format='channels_last')(crop3)
     merge3 = concatenate([upool3, crop3], axis=-1, name='merge3')
-    dconv3_1 = Conv2D(256, (3, 3), activation='relu', name='dconv3_1', data_format='channels_last')(merge3)
-    dconv3_2 = Conv2D(256, (3, 3), name='dconv3_2', data_format='channels_last')(dconv3_1)
+    dconv3_1 = Conv2D(256, (3, 3), activation='relu', name='dconv3_1', data_format='channels_last',
+                      kernel_regularizer=l2(regularize_weight))(merge3)
+    dconv3_2 = Conv2D(256, (3, 3), name='dconv3_2', data_format='channels_last',
+                      kernel_regularizer=l2(regularize_weight))(dconv3_1)
     dconv3_2 = BatchNormalization(axis=-1, name='bn3d')(dconv3_2)
     dconv3_2 = Activation('relu')(dconv3_2)
 
@@ -335,8 +348,10 @@ def retouch_unet(input_shape=(224, 224, 3)):
     crop2 = Cropping2D(cropping=((17, 17), (17, 17)), data_format='channels_last')(conv2_2)
     crop2 = SpatialDropout2D(0.25, data_format='channels_last')(crop2)
     merge2 = concatenate([upool2, crop2], axis=-1, name='merge2')
-    dconv2_1 = Conv2D(128, (3, 3), activation='relu', name='dconv2_1', data_format='channels_last')(merge2)
-    dconv2_2 = Conv2D(128, (3, 3), name='dconv2_2', data_format='channels_last')(dconv2_1)
+    dconv2_1 = Conv2D(128, (3, 3), activation='relu', name='dconv2_1', data_format='channels_last',
+                      kernel_regularizer=l2(regularize_weight))(merge2)
+    dconv2_2 = Conv2D(128, (3, 3), name='dconv2_2', data_format='channels_last',
+                      kernel_regularizer=l2(regularize_weight))(dconv2_1)
     dconv2_2 = BatchNormalization(axis=-1, name='bn2d')(dconv2_2)
     dconv2_2 = Activation('relu')(dconv2_2)
 
@@ -346,17 +361,49 @@ def retouch_unet(input_shape=(224, 224, 3)):
     crop1 = Cropping2D(cropping=((42, 42), (42, 42)), data_format='channels_last')(conv1_2)
     crop1 = SpatialDropout2D(0.5, data_format='channels_last')(crop1)
     merge1 = concatenate([upool1, crop1], axis=-1, name='merge1')
-    dconv1_1 = Conv2D(64, (3, 3), activation='relu', name='dconv1_1', data_format='channels_last')(merge1)
-    dconv1_2 = Conv2D(64, (3, 3), activation='relu', name='dconv1_2', data_format='channels_last')(dconv1_1)
+    dconv1_1 = Conv2D(64, (3, 3), activation='relu', name='dconv1_1', data_format='channels_last',
+                      kernel_regularizer=l2(regularize_weight))(merge1)
+    dconv1_2 = Conv2D(64, (3, 3), activation='relu', name='dconv1_2', data_format='channels_last',
+                      kernel_regularizer=l2(regularize_weight))(dconv1_1)
     dconv1_2 = SpatialDropout2D(0.25, data_format='channels_last')(dconv1_2)
 
-    seg_out = Conv2D(4, (1, 1), activation='relu', name='outp', data_format='channels_last')(dconv1_2)
+    # multiscale seg out
+    b1_up = UpSampling2D(size=(8, 8), data_format='channels_last')(conv4_2)
+    b1_up = Cropping2D(cropping=((14, 14), (14, 14)), data_format='channels_last')(b1_up)
+    b2_up = UpSampling2D(size=(4, 4), data_format='channels_last')(dconv3_2)
+    b2_up = Cropping2D(cropping=((6, 6), (6, 6)), data_format='channels_last')(b2_up)
+    b3_up = UpSampling2D(size=(2, 2), data_format='channels_last')(dconv2_2)
+    b3_up = Cropping2D(cropping=((2, 2), (2, 2)), data_format='channels_last')(b3_up)
+
+    merge_out = concatenate([b1_up, b2_up, b3_up, dconv1_2], axis=-1, name='merge_out')
+
+    seg_out = Conv2D(4, (3, 3), activation='relu', name='seg_out_', data_format='channels_last',
+                     kernel_regularizer=l2(regularize_weight), padding='same')(merge_out)
     seg_out = Softmax4D(axis=-1, name='seg_out')(seg_out)
 
+    if not TRAIN_CLASSES:
+        model = Model(inputs=in_image, outputs=seg_out)
+        sgd = SGD(lr=0.001, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
+        model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
+    else:
+        # label out IRF, SRF, PED
+        c_out_IRF = Conv2D(1, (3, 3), activation='sigmoid', name='c_out_', data_format='channels_last',
+                           kernel_regularizer=l2(regularize_weight))(conv4_2)
+        c_out_IRF = GlobalMaxPooling2D(data_format='channels_last', name='gpool')(c_out_IRF)
 
-    model = Model(inputs=in_image, outputs=seg_out)
-    sgd = SGD(lr=0.01, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
-    model.compile(optimizer=sgd, loss=multiclass_balanced_cross_entropy_loss_unet)
+        c_out_SRF = Conv2D(2, (3, 3), activation='sigmoid', name='c_out_', data_format='channels_last',
+                           kernel_regularizer=l2(regularize_weight))(conv4_2)
+        c_out_SRF = GlobalAveragePooling2D(data_format='channels_last', name='gpool')(c_out_SRF)
+
+        c_out_PED = Conv2D(2, (3, 3), activation='sigmoid', name='c_out_', data_format='channels_last',
+                           kernel_regularizer=l2(regularize_weight))(conv4_2)
+        c_out_PED = GlobalAveragePooling2D(data_format='channels_last', name='gpool')(c_out_PED)
+
+        model = Model(inputs=in_image, outputs=[seg_out, c_out_IRF, c_out_SRF, c_out_PED])
+        sgd = SGD(lr=0.001, momentum=0.9, decay=1e-8, nesterov=False, clipvalue=1.)
+        model.compile(optimizer=sgd,
+                      loss=[multiclass_balanced_cross_entropy_loss_unet, 'binary_crossentropy', 'binary_crossentropy',
+                            'binary_crossentropy'])
 
     model.summary()
     plot_model(model, to_file='./outputs/model_unet.png', show_shapes=True)

@@ -7,8 +7,9 @@ import numpy as np
 from custom_networks import retouch_dual_net
 import os
 from hyper_parameters import *
+import matplotlib.pyplot as plt
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 if platform.system() == 'Linux':
@@ -156,9 +157,24 @@ def test_model():
     # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network Testing'
 
-    val_data >> Map(
+    def plot_image(sample):
+        plt.subplot(1, 3, 1)
+        plt.imshow(sample[0][:,:,1].astype(np.uint8), cmap='gray')
+        plt.imshow(sample[2], vmin=0, vmax=3, alpha=0.5)
+        plt.title('Input image')
+        plt.subplot(1, 3, 2)
+        plt.imshow(sample[1], vmin=0, vmax=3)
+        plt.title('GT mask')
+        plt.subplot(1, 3, 3)
+        plt.imshow(sample[2], vmin=0, vmax=3)
+        plt.title('Predicted mask')
+        plt.pause(.5)
+
+        return 0
+
+    val_data >> Shuffle(5000) >> Map(
         rearange_cols) >> img_reader >> mask_reader >> roi_reader >> image_patcher >> MapCol(0, remove_mean) >> NOP(FilterFalse(drop_patch)) >> build_batch_test >> Filter(filter_batch_shape) >> Map(predict_batch) >> MapCol(0, add_mean) >> MapCol(
-        1, extract_label) >> MapCol(1, mask_edge) >> MapCol(1, mask_pad) >> MapCol(2, extract_label) >> MapCol(2, mask_pad) >> MapCol(3, extract_label) >> PrintColType() >> res_viewer >> Consume()
+        1, extract_label) >> MapCol(1, mask_edge) >> MapCol(1, mask_pad) >> MapCol(2, extract_label) >> MapCol(2, mask_pad) >> MapCol(3, extract_label) >> PrintColType() >> Map(plot_image) >> Consume()
 
 
 if __name__ == "__main__":

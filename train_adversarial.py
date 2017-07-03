@@ -55,6 +55,7 @@ def binarize_softmax(x):
 
     return x
 
+
 def binarize_softmax_output_shape(input_shape):
     return input_shape
 

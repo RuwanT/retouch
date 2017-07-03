@@ -18,6 +18,7 @@ else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
 weight_file = './outputs/weights.h5'
+# weight_file = '/home/truwan/projects/retouch-adversarial/outputs/funal_gan_weights.h5'
 
 
 # def visualize_images():
@@ -154,7 +155,6 @@ def test_model():
     mask_pad = lambda s: np.pad(s, pad_width=46, mode='constant', constant_values=0.)
     mask_edge = lambda s: s[46:-46, 46:-46]
 
-    # TODO : topcon data is removed, add them. no augmentation
     print 'Starting network Testing'
 
     def plot_image(sample):

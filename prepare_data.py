@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from skimage.morphology import disk, rectangle
 from skimage.filters.rank import median
 import matplotlib.pyplot as plt
+from nutsml import *
+from nutsflow import *
 
 if platform.system() == 'Linux':
     DATA_ROOT = '/home/truwan/DATA/retouch/'
@@ -20,7 +22,7 @@ IRF_CODE = 1
 SRF_CODE = 2
 PED_CODE = 3
 
-CHULL = True
+CHULL = False
 
 
 def preprocess_oct_images():
@@ -79,6 +81,42 @@ def preprocess_oct_images():
     col_names = ['image_name', 'vendor', 'root', 'slice', 'is_IRF', 'is_SRF', 'is_PED']
     df = pd.DataFrame(image_names, columns=col_names)
     df.to_csv(DATA_ROOT + 'pre_processed/slice_gt.csv', index=False)
+
+
+def create_test_train_set():
+
+    print 'generating new test train SPLIT'
+    # reading training data
+    train_file = DATA_ROOT + '/pre_processed/slice_gt.csv'
+    data = ReadPandas(train_file, dropnan=True)
+    data = data >> Shuffle(7000) >> Collect()
+
+    case_names = data >> GetCols(0, 1) >> Collect(set)
+    # case_names >> Print() >> Consume()
+
+    # is_topcon = lambda s: s[1] == 'Topcon'
+    # is_cirrus = lambda s: s[1] == 'Cirrus'
+    # is_spectralis = lambda s: s[1] == 'Spectralis'
+
+    train_cases, test_cases = case_names >> Shuffle(70) >> SplitRandom(ratio=0.75)
+
+    print train_cases >> GetCols(1) >> CountValues()
+    print test_cases >> GetCols(1) >> CountValues()
+
+    train_cases = train_cases >> GetCols(0) >> Collect()
+    test_cases = test_cases >> GetCols(0) >> Collect()
+
+    is_in_train = lambda sample: (sample[0],) in list(train_cases)
+
+    writer = WriteCSV('./outputs/train_data.csv')
+    data >> Filter(is_in_train) >> writer
+    writer = WriteCSV('./outputs/test_data.csv')
+    data >> FilterFalse(is_in_train) >> writer
+
+    case_names = data >> Filter(is_in_train) >> GetCols(0, 1) >> Collect(set)
+    print case_names >> GetCols(1) >> CountValues()
+    case_names = data >> FilterFalse(is_in_train) >> GetCols(0, 1) >> Collect(set)
+    print case_names >> GetCols(1) >> CountValues()
 
 
 def create_roi_masks(tresh=1e-2):
@@ -140,6 +178,6 @@ def create_roi_masks(tresh=1e-2):
 
 
 if __name__ == "__main__":
-    create_roi_masks()
-
+    # create_roi_masks()
+    create_test_train_set()
 

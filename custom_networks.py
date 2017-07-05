@@ -26,34 +26,38 @@ def multiclass_balanced_cross_entropy_loss(y_true, y_pred):
 
 
 def multiclass_balanced_cross_entropy_loss_unet(y_true, y_pred):
-    # TODO: Check behavior droped the zero class
     # shape = KB.int_shape(y_pred)
     CROP_SHAPE = KB.int_shape(y_pred)
-    # print CROP_SHAPE
+    print CROP_SHAPE
     batch_size = BATCH_SIZE
     num_classes = 4
 
-    y_true_ = tf.image.resize_image_with_crop_or_pad(y_true, target_height=CROP_SHAPE[1], target_width=CROP_SHAPE[2])
+    y_true = tf.image.resize_image_with_crop_or_pad(y_true, target_height=CROP_SHAPE[1], target_width=CROP_SHAPE[2])
 
     y_pred_ = KB.clip(y_pred, KB.epsilon(), 1. - KB.epsilon())
 
-    cross_ent = (KB.log(y_pred_) * y_true_)
+    # Calculate balanced cross-entropy loss
+    cross_ent = (KB.log(y_pred_) * y_true)
     cross_ent = KB.sum(cross_ent, axis=-2, keepdims=False)
     cross_ent = KB.sum(cross_ent, axis=-2, keepdims=False)
     cross_ent = KB.reshape(cross_ent, shape=(batch_size, num_classes))
 
-    y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
+    y_true_ = KB.sum(y_true, axis=-2, keepdims=False)
     y_true_ = KB.sum(y_true_, axis=-2, keepdims=False)
     y_true_ = KB.reshape(y_true_, shape=(batch_size, num_classes)) + KB.epsilon()
 
-    # calculate balance weights
-    # balance_score = KB.concatenate([KB.ones(shape=(batch_size, 1)) * KB.variable(0.1, dtype='float32'),
-    #                                 KB.ones(shape=(batch_size, num_classes - 1))], axis=-1)
-    # cross_ent = cross_ent * balance_score
+    cross_ent = (cross_ent / y_true_)
 
-    cross_ent = (cross_ent / y_true_)  # * balance_score
+    # calculate dice loss
+    g_0 = y_true[:, :, :, 0]
+    p_0 = y_pred_[:, :, :, 0]
 
-    return - KB.mean(cross_ent, axis=-1, keepdims=False)
+    true_pos = KB.sum((1. - p_0) * (1. - g_0), keepdims=False)
+    false_pos = KB.sum((1. - p_0) * g_0, keepdims=False)
+    false_neg = KB.sum(p_0 * (1. - g_0), keepdims=False)
+    dice_loss = 1. - (2. * true_pos) / (2. * true_pos + false_pos + false_neg + KB.epsilon())
+
+    return - 0.5 * KB.mean(cross_ent, axis=-1, keepdims=False) + 0.5 * dice_loss
 
 
 def binary_prob(x):

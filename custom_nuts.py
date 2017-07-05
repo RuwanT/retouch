@@ -159,6 +159,9 @@ def sample_patches_entropy_mask(img, mask=None, roimask=None, pshape=(224, 224),
     roimask = roimask.astype(np.int8)
     # it = ni.sample_patch_centers(roimask, pshape=pshape, npos=npos, nneg=nneg, pos=pos, neg=neg)
     it = sample_oct_patch_centers(roimask, pshape=pshape, npos=npos, pos=pos, neg=neg)
+    it1 = ni.sample_patch_centers(roimask, pshape=pshape, npos=int(float(npos) * .2), nneg=0, pos=pos, neg=neg)
+    for r, c, l in it1:
+        it.append([r, c, l])
     # h,w = roimask.shape
     # fig1 = plt.figure()
     # ax1 = fig1.add_subplot(111, aspect='equal')

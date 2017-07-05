@@ -1,5 +1,6 @@
 from custom_networks import retouch_dual_net, retouch_vgg_net, retouch_unet, retouch_unet_no_drop
-from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT, ImagePatchesByMaskRetouch_resampled, ImagePatchesForTest_resampled
+from custom_nuts import ImagePatchesByMaskRetouch, ReadOCT, ImagePatchesByMaskRetouch_resampled, \
+    ImagePatchesForTest_resampled
 from nutsflow import *
 from nutsml import *
 import platform
@@ -18,7 +19,7 @@ else:
     DATA_ROOT = '/Users/ruwant/DATA/retouch/pre_processed/'
 
 weight_file = './outputs/weights.h5'
-# weight_file = '/home/truwan/projects/retouch-adversarial/outputs/funal_gan_weights.h5'
+weight_file_ = '/home/truwan/projects/retouch-adversarial/outputs/weights.h5'
 
 
 # def visualize_images():
@@ -97,9 +98,9 @@ def test_model():
 
     # randomly sample image patches from the interesting region (based on entropy)
     image_patcher = ImagePatchesForTest_resampled(imagecol=0, maskcol=1, IRFcol=2, SRFcol=3, PEDcol=4,
-                                                        roicol=5,
-                                                        pshape=(PATCH_SIZE_H, 512),
-                                                        npos=7, nneg=2, pos=1, use_entropy=True, patch_border=42)
+                                                  roicol=5,
+                                                  pshape=(PATCH_SIZE_H, 512),
+                                                  npos=7, nneg=2, pos=1, use_entropy=True, patch_border=42)
 
     res_viewer = ViewImage(imgcols=(0, 1, 2), layout=(1, 3), pause=1)
 
@@ -136,13 +137,16 @@ def test_model():
     # define the model
     # model = retouch_vgg_net(input_shape=(224, 224, 3))
     model = retouch_unet(input_shape=(PATCH_SIZE_H, 512, 3))
+    model_ = retouch_unet(input_shape=(PATCH_SIZE_H, 512, 3))
 
     assert os.path.isfile(weight_file)
     model.load_weights(weight_file)
+    model_.load_weights(weight_file_)
 
     def predict_batch(sample):
         outp = model.predict(sample[0])
-        return (sample[0], sample[1], outp)
+        outp_ = model_.predict(sample[0])
+        return (sample[0], sample[1], outp, outp_)
 
     filter_batch_shape = lambda s: s[0].shape[0] == TEST_BATCH_SIZE
 
@@ -151,30 +155,37 @@ def test_model():
     remove_mean = lambda s: (s - patch_mean) / patch_sd
 
     add_mean = lambda s: np.asarray((s[0, :] * patch_sd) + patch_mean, dtype=np.int8)
-    extract_label = lambda s: np.argmax(s[0,:], axis=-1)
+    extract_label = lambda s: np.argmax(s[0, :], axis=-1)
     mask_pad = lambda s: np.pad(s, pad_width=46, mode='constant', constant_values=0.)
     mask_edge = lambda s: s[46:-46, 46:-46]
 
     print 'Starting network Testing'
 
     def plot_image(sample):
-        plt.subplot(1, 3, 1)
-        plt.imshow(sample[0][:,:,1].astype(np.uint8), cmap='gray')
+        plt.subplot(2, 2, 1)
+        plt.imshow(sample[0][:, :, 1].astype(np.uint8), cmap='gray')
         plt.imshow(sample[2], vmin=0, vmax=3, alpha=0.5)
         plt.title('Input image')
-        plt.subplot(1, 3, 2)
+        plt.subplot(2, 2, 2)
         plt.imshow(sample[1], vmin=0, vmax=3)
         plt.title('GT mask')
-        plt.subplot(1, 3, 3)
+        plt.subplot(2, 2, 3)
         plt.imshow(sample[2], vmin=0, vmax=3)
         plt.title('Predicted mask')
+        plt.subplot(2, 2, 4)
+        plt.imshow(sample[3], vmin=0, vmax=3)
+        plt.title('Predicted mask 2')
         plt.pause(.5)
 
         return 0
 
     val_data >> Shuffle(5000) >> Map(
-        rearange_cols) >> img_reader >> mask_reader >> roi_reader >> image_patcher >> MapCol(0, remove_mean) >> NOP(FilterFalse(drop_patch)) >> build_batch_test >> Filter(filter_batch_shape) >> Map(predict_batch) >> MapCol(0, add_mean) >> MapCol(
-        1, extract_label) >> MapCol(1, mask_edge) >> MapCol(1, mask_pad) >> MapCol(2, extract_label) >> MapCol(2, mask_pad) >> MapCol(3, extract_label) >> PrintColType() >> Map(plot_image) >> Consume()
+        rearange_cols) >> img_reader >> mask_reader >> roi_reader >> image_patcher >> MapCol(0, remove_mean) >> NOP(
+        FilterFalse(drop_patch)) >> build_batch_test >> Filter(filter_batch_shape) >> Map(predict_batch) >> MapCol(0,
+                                                                                                                   add_mean) >> MapCol(
+        1, extract_label) >> MapCol(1, mask_edge) >> MapCol(1, mask_pad) >> MapCol(2, extract_label) >> MapCol(2,
+                                                                                                               mask_pad) >> MapCol(
+        3, extract_label) >> MapCol(3, mask_pad) >> NOP(PrintColType()) >> Map(plot_image) >> Consume()
 
 
 if __name__ == "__main__":

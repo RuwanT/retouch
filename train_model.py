@@ -181,6 +181,9 @@ def train_model():
             ax.legend()
             fig.savefig('./outputs/res_plot.png')
 
+    error_writer = WriteCSV('./outputs/epoch_errors.csv')
+    error_hold >> error_writer
+
 
 if __name__ == "__main__":
     train_model()
